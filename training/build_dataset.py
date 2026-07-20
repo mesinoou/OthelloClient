@@ -132,31 +132,72 @@ def _from_array(values: array, dtype: np.dtype) -> np.ndarray:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build pattern-evaluation data from public self-play games."
+        description="Build pattern-evaluation data from public self-play games.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--source-dir",
         type=Path,
         default=Path(".training/sources/OthelloAI_Textbook"),
+        help="downloaded self-play record directory",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path(".training/datasets/nyanyan-self-play-v1"),
+        help="generated dataset directory",
     )
-    parser.add_argument("--source-files", type=int, default=SOURCE_FILE_COUNT)
-    parser.add_argument("--max-games", type=int, default=None)
-    parser.add_argument("--start-ply", type=int, default=8)
-    parser.add_argument("--end-ply", type=int, default=52)
-    parser.add_argument("--stride", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=20260720)
+    parser.add_argument(
+        "--source-files",
+        type=int,
+        default=SOURCE_FILE_COUNT,
+        help="number of upstream record files to read",
+    )
+    parser.add_argument(
+        "--max-games",
+        type=int,
+        default=None,
+        help="maximum games to process; useful for smoke tests",
+    )
+    parser.add_argument(
+        "--start-ply",
+        type=int,
+        default=8,
+        help="first ply to sample",
+    )
+    parser.add_argument(
+        "--end-ply",
+        type=int,
+        default=52,
+        help="last ply to sample",
+    )
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help="sample one position every N plies",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=20260720,
+        help="deterministic game-split seed",
+    )
     parser.add_argument(
         "--split",
         default="80,10,10",
-        help="train,validation,test percentages",
+        help="train,validation,test split weights",
     )
-    parser.add_argument("--no-download", action="store_true")
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--no-download",
+        action="store_true",
+        help="require existing source files instead of downloading",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace the output directory if it exists",
+    )
     return parser.parse_args()
 
 

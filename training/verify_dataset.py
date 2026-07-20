@@ -123,14 +123,28 @@ def verify_sampled_features(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Verify a generated dataset.")
+    parser = argparse.ArgumentParser(
+        description="Verify a generated dataset.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         "--dataset-dir",
         type=Path,
         default=Path(".training/datasets/nyanyan-self-play-v1"),
+        help="dataset directory to verify",
     )
-    parser.add_argument("--sample-size", type=int, default=10000)
-    parser.add_argument("--seed", type=int, default=20260720)
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=10000,
+        help="positions per split to recompute",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=20260720,
+        help="feature verification sampling seed",
+    )
     return parser.parse_args()
 
 

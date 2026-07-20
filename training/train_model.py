@@ -540,28 +540,81 @@ def evaluate_quantized(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train the pattern evaluator.")
+    parser = argparse.ArgumentParser(
+        description="Train the pattern evaluator.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         "--dataset-dir",
         type=Path,
         default=Path(".training/datasets/nyanyan-self-play-v1"),
+        help="input dataset directory",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path(".training/models/pattern-evaluation-v1"),
+        help="model and lookup-table output directory",
     )
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--batch-size", type=int, default=1024)
-    parser.add_argument("--learning-rate", type=float, default=0.001)
-    parser.add_argument("--l2", type=float, default=1.0e-5)
-    parser.add_argument("--patience", type=int, default=5)
-    parser.add_argument("--seed", type=int, default=20260720)
-    parser.add_argument("--label", choices=("filled", "disc"), default="filled")
-    parser.add_argument("--phase-starts", default="20,30,40,50")
-    parser.add_argument("--score-scale", type=int, default=DEFAULT_SCORE_SCALE)
-    parser.add_argument("--max-samples-per-phase", type=int, default=None)
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--epochs", type=int, default=20, help="maximum epochs")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1024,
+        help="positions per mini-batch",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.001,
+        help="Adam learning rate",
+    )
+    parser.add_argument(
+        "--l2",
+        type=float,
+        default=1.0e-5,
+        help="L2 regularization coefficient",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=5,
+        help="epochs without validation improvement before stopping",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=20260720,
+        help="weight initialization and shuffle seed",
+    )
+    parser.add_argument(
+        "--label",
+        choices=("filled", "disc"),
+        default="filled",
+        help="terminal score used as the training target",
+    )
+    parser.add_argument(
+        "--phase-starts",
+        default="20,30,40,50",
+        help="comma-separated starts for the four phase models",
+    )
+    parser.add_argument(
+        "--score-scale",
+        type=int,
+        default=DEFAULT_SCORE_SCALE,
+        help="integer lookup-table score scale",
+    )
+    parser.add_argument(
+        "--max-samples-per-phase",
+        type=int,
+        default=None,
+        help="limit each split and phase; marks output as smoke-only",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace the output directory if it exists",
+    )
     return parser.parse_args()
 
 
