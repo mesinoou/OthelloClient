@@ -13,6 +13,11 @@ score_*.txt
 # Download and import work areas
 .edax-package.zip
 .wthor/
+.training/
+
+# Python training caches
+__pycache__/
+*.py[cod]
 
 # Local tooling and IDE state
 .agents/
