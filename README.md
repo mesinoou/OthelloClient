@@ -84,7 +84,7 @@ java -cp .build EndgameSearchBenchmark 16 2 8000 12 4
 
 ## 評価関数の学習
 
-`training`には、公開自己対局棋譜から学習データを生成し、記事方式の局所パターンモデルを学習するPythonツールを収録している。対角線、辺とXマス、角三角形の3種パターンを小規模ニューラルネットで学習し、全状態を整数表へ事前計算するため、対局時のJavaクライアントはPythonやニューラルネット実行環境を必要としない。
+`training`には、公開自己対局棋譜と定石生成に用いたWTHOR棋譜から学習データを生成し、記事方式の局所パターンモデルを学習するPythonツールを収録している。対角線、辺とXマス、角三角形の3種パターンを小規模ニューラルネットで学習し、全状態を整数表へ事前計算するため、対局時のJavaクライアントはPythonやニューラルネット実行環境を必要としない。
 
 ```powershell
 python -m training.build_dataset
@@ -92,7 +92,7 @@ python -m training.verify_dataset
 python -m training.train_model
 ```
 
-公開2万局から生成した`nyanyan-self-play-v1`の再現条件、局面数、SHA-256は`training/dataset-v1.json`に記録している。ダウンロード元、固定コミット、MITライセンス表記は`training/THIRD_PARTY.md`を参照する。生棋譜、生成データセット、学習モデルは`.training/`へ保存され、Gitの追跡対象には含まれない。詳しい操作は`training/README.md`に記載している。
+公開自己対局20,000局とWTHOR 58,252局から生成した`combined-evaluation-v2`の再現条件、局面数、SHA-256は`training/dataset-v2.json`に記録している。旧自己対局版の記録は`training/dataset-v1.json`に残している。ダウンロード元と利用条件は`training/THIRD_PARTY.md`を参照する。生棋譜、生成データセット、学習モデルは`.training/`へ保存され、Gitの追跡対象には含まれない。詳しい操作は`training/README.md`に記載している。
 
 ## バージョン管理
 
