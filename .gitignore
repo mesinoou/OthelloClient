@@ -1,0 +1,22 @@
+# Java build output
+.build/
+*.class
+
+# Locally supplied programs that may not be redistributed
+OthelloServer.jar
+OthelloMonteAI.class
+
+# Server-generated match artifacts
+gamelog_*.txt
+score_*.txt
+
+# Download and import work areas
+.edax-package.zip
+.wthor/
+
+# Local tooling and IDE state
+.agents/
+.idea/
+.vscode/
+*.iml
+Thumbs.db

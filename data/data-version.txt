@@ -1,0 +1,22 @@
+data-version: opening-book-v2
+generated-date: 2026-07-20
+binary-format-version: 1
+source: Federation Francaise d'Othello WTHOR database
+source-url: https://www.ffothello.org/informatique/la-base-wthor/
+source-format: https://www.ffothello.org/wthor/Format_WThor.pdf
+source-years: 2001-2015, 2024, 2025
+source-games: 58252
+accepted-games: 58252
+book-entries: 4252
+maximum-ply: 18
+minimum-games-ply-1-to-6: 64
+minimum-games-ply-7-to-12: 24
+minimum-games-ply-13-to-18: 8
+teacher-search-depth: 5
+reevaluated-positions: 1050
+teacher-changed-selections: 9
+teacher-search-nodes: 2110070
+builder-command: java OpeningBookBuilder data/opening-book.bin 18 8 5 <WTB-directory>
+selection: 90-percent Wilson lower confidence bound, disc difference, support count, and fixed-depth teacher search
+raw-wthor-included: false
+rights-note: The official source invites free downloads and explicitly describes opening-book generation as a programming use. No separate redistribution license was found, so raw archives are not included.
