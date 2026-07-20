@@ -8,6 +8,9 @@ from dataclasses import dataclass
 FULL_MASK = (1 << 64) - 1
 A_FILE = 0x0101010101010101
 H_FILE = 0x8080808080808080
+TOP_EDGE = 0x00000000000000FF
+BOTTOM_EDGE = 0xFF00000000000000
+CORNERS = 0x8100000000000081
 
 BLACK = 1
 WHITE = -1
@@ -166,6 +169,78 @@ def frontier_counts(black: int, white: int) -> tuple[int, int]:
         (black & adjacent_to_empty).bit_count(),
         (white & adjacent_to_empty).bit_count(),
     )
+
+
+def stable_edge_discs(board: int, occupied: int) -> int:
+    """Return the conservative stable-edge mask used by the Java baseline."""
+    stable = 0
+    for start, step in (
+        (0, 1),
+        (0, 8),
+        (7, -1),
+        (7, 8),
+        (56, 1),
+        (56, -8),
+        (63, -1),
+        (63, -8),
+    ):
+        stable |= _edge_run(board, start, step)
+
+    for edge in (TOP_EDGE, BOTTOM_EDGE, A_FILE, H_FILE):
+        if occupied & edge == edge:
+            stable |= board & edge
+    return stable
+
+
+def parity_access_difference(
+    own: int,
+    opponent: int,
+    own_moves: int,
+    opponent_moves: int,
+) -> int:
+    remaining = ~(own | opponent) & FULL_MASK
+    difference = 0
+    while remaining:
+        seed = remaining & -remaining
+        region = _connected_region(seed, remaining)
+        remaining &= ~region
+        own_can_enter = bool(own_moves & region)
+        opponent_can_enter = bool(opponent_moves & region)
+        if own_can_enter == opponent_can_enter:
+            continue
+        preference = 1 if region.bit_count() & 1 else -1
+        difference += preference if own_can_enter else -preference
+    return difference
+
+
+def _edge_run(board: int, start: int, step: int) -> int:
+    run = 0
+    square = start
+    for _ in range(8):
+        square_bit = 1 << square
+        if not board & square_bit:
+            break
+        run |= square_bit
+        square += step
+    return run
+
+
+def _connected_region(seed: int, empty: int) -> int:
+    region = seed
+    frontier = seed
+    while frontier:
+        frontier = _orthogonal_neighbors(frontier) & empty & ~region
+        region |= frontier
+    return region
+
+
+def _orthogonal_neighbors(board: int) -> int:
+    return (
+        ((board & ~H_FILE) << 1)
+        | ((board & ~A_FILE) >> 1)
+        | (board << 8)
+        | (board >> 8)
+    ) & FULL_MASK
 
 
 def replay_record(

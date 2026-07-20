@@ -17,12 +17,15 @@ import numpy as np
 
 from training.othello import (
     BLACK,
+    CORNERS,
     InvalidRecordError,
     Position,
     frontier_counts,
     legal_moves,
+    parity_access_difference,
     replay_squares,
     source_coordinate_to_square,
+    stable_edge_discs,
 )
 from training.patterns import PATTERN_GROUPS, encode_group
 from training.wthor import read_zip
@@ -100,9 +103,15 @@ class DatasetBuffers:
         self.source = array("B")
         self.label_disc = array("b")
         self.label_filled = array("b")
-        self.mobility = array("b")
-        self.frontier_black = array("B")
-        self.frontier_white = array("B")
+        self.mobility_own = array("B")
+        self.mobility_opponent = array("B")
+        self.frontier_own = array("B")
+        self.frontier_opponent = array("B")
+        self.disc_difference = array("b")
+        self.corner_difference = array("b")
+        self.corner_move_difference = array("b")
+        self.stable_edge_difference = array("b")
+        self.parity_access_difference = array("b")
         self.patterns = {
             name: array("H") for name in PATTERN_GROUPS
         }
@@ -129,19 +138,37 @@ class DatasetBuffers:
 
         own = position.black if position.player == BLACK else position.white
         other = position.white if position.player == BLACK else position.black
-        signed_mobility = legal_moves(own, other).bit_count()
-        self.mobility.append(signed_mobility * position.player)
+        own_moves = legal_moves(own, other)
+        opponent_moves = legal_moves(other, own)
+        own_frontier, opponent_frontier = frontier_counts(own, other)
+        occupied = own | other
 
-        black_frontier, white_frontier = frontier_counts(
-            position.black,
-            position.white,
+        self.mobility_own.append(own_moves.bit_count())
+        self.mobility_opponent.append(opponent_moves.bit_count())
+        self.frontier_own.append(own_frontier)
+        self.frontier_opponent.append(opponent_frontier)
+        self.disc_difference.append(own.bit_count() - other.bit_count())
+        self.corner_difference.append(
+            (own & CORNERS).bit_count() - (other & CORNERS).bit_count()
         )
-        self.frontier_black.append(black_frontier)
-        self.frontier_white.append(white_frontier)
+        self.corner_move_difference.append(
+            (own_moves & CORNERS).bit_count()
+            - (opponent_moves & CORNERS).bit_count()
+        )
+        self.stable_edge_difference.append(
+            stable_edge_discs(own, occupied).bit_count()
+            - stable_edge_discs(other, occupied).bit_count()
+        )
+        empties = 64 - occupied.bit_count()
+        self.parity_access_difference.append(
+            parity_access_difference(own, other, own_moves, opponent_moves)
+            if empties <= 20
+            else 0
+        )
 
-        for name, patterns in PATTERN_GROUPS.items():
+        for name, group in PATTERN_GROUPS.items():
             self.patterns[name].extend(
-                encode_group(position.black, position.white, patterns)
+                encode_group(own, other, group)
             )
 
     def arrays(self) -> dict[str, np.ndarray]:
@@ -155,18 +182,36 @@ class DatasetBuffers:
             "source": _from_array(self.source, np.uint8),
             "label_disc": _from_array(self.label_disc, np.int8),
             "label_filled": _from_array(self.label_filled, np.int8),
-            "mobility": _from_array(self.mobility, np.int8),
-            "frontier_black": _from_array(
-                self.frontier_black,
+            "mobility_own": _from_array(self.mobility_own, np.uint8),
+            "mobility_opponent": _from_array(
+                self.mobility_opponent,
                 np.uint8,
             ),
-            "frontier_white": _from_array(
-                self.frontier_white,
+            "frontier_own": _from_array(self.frontier_own, np.uint8),
+            "frontier_opponent": _from_array(
+                self.frontier_opponent,
                 np.uint8,
+            ),
+            "disc_difference": _from_array(self.disc_difference, np.int8),
+            "corner_difference": _from_array(
+                self.corner_difference,
+                np.int8,
+            ),
+            "corner_move_difference": _from_array(
+                self.corner_move_difference,
+                np.int8,
+            ),
+            "stable_edge_difference": _from_array(
+                self.stable_edge_difference,
+                np.int8,
+            ),
+            "parity_access_difference": _from_array(
+                self.parity_access_difference,
+                np.int8,
             ),
         }
         for name, values in self.patterns.items():
-            width = len(PATTERN_GROUPS[name])
+            width = PATTERN_GROUPS[name].instances
             result[name] = _from_array(values, np.uint16).reshape(count, width)
         return result
 
@@ -197,7 +242,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(".training/datasets/combined-evaluation-v2"),
+        default=Path(".training/datasets/combined-evaluation-v3"),
         help="generated dataset directory",
     )
     parser.add_argument(
@@ -533,8 +578,8 @@ def write_dataset(
         for source in SOURCE_IDS
     }
     metadata = {
-        "dataset_format": 2,
-        "name": "combined-evaluation-v2",
+        "dataset_format": 3,
+        "name": "combined-evaluation-v3",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "self_play": {
@@ -581,20 +626,36 @@ def write_dataset(
             "label_filled": (
                 "label_disc with remaining empties awarded to the winner"
             ),
-            "perspective": "black",
+            "stored_perspective": "black",
+            "training_perspective": "side to move",
         },
         "features": {
             "patterns": {
                 name: {
-                    "instances": len(patterns),
-                    "squares": len(patterns[0]),
-                    "encoding": "base-3 empty=0 black=1 white=2",
+                    "instances": group.instances,
+                    "squares": sorted(
+                        {len(pattern) for pattern in group.patterns}
+                    ),
+                    "classes": list(group.class_names),
+                    "encoding": "base-3 empty=0 own=1 opponent=2",
                 }
-                for name, patterns in PATTERN_GROUPS.items()
+                for name, group in PATTERN_GROUPS.items()
             },
-            "mobility": "legal moves for side to move, signed by color",
-            "frontier_black": "black discs adjacent to an empty square",
-            "frontier_white": "white discs adjacent to an empty square",
+            "mobility_own": "legal moves for side to move",
+            "mobility_opponent": "legal moves for the opponent",
+            "frontier_own": "own discs adjacent to an empty square",
+            "frontier_opponent": "opponent discs adjacent to an empty square",
+            "disc_difference": "own discs minus opponent discs",
+            "corner_difference": "own corners minus opponent corners",
+            "corner_move_difference": (
+                "own legal corner moves minus opponent legal corner moves"
+            ),
+            "stable_edge_difference": (
+                "own conservative stable-edge discs minus opponent"
+            ),
+            "parity_access_difference": (
+                "odd/even empty-region access difference; zero above 20 empties"
+            ),
         },
         "stats": {
             name: {

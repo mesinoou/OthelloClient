@@ -10,8 +10,18 @@ The optional training dataset is downloaded from:
 - License: MIT License; see `third_party/OthelloAI_Textbook-LICENSE.txt`
 
 The pattern shapes are based on the article and sample implementation, but the
-bitboard replay, dataset builder, NumPy trainer, split policy, quantization, and
+bitboard replay, dataset builder, NumPy/PyTorch trainer, split policy, quantization, and
 metadata format in this repository are independent implementations.
+
+The added full-line, short-diagonal, and 3x3-corner pattern families are
+informed by Edax 4.6's public evaluation pattern layout:
+
+- Project: Edax Reversi
+- Source: https://github.com/abulmo/edax-reversi/blob/v4.6/src/eval.c
+- License: GNU General Public License v3.0
+
+Only the geometric pattern choices are used; the model, feature encoding,
+training, and table-export implementations in this repository are independent.
 
 Downloaded records and generated datasets are stored under `.training/` and
 are not committed to this repository.

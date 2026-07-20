@@ -2,7 +2,7 @@
 
 このディレクトリには、公開自己対局棋譜と定石生成に用いたWTHOR棋譜から学習データセットを作成し、局所パターン評価モデルを学習するためのオフラインツールを収録している。
 
-学習にはPythonとNumPyを使用する。対局クライアントはJavaのままであり、最終的には学習結果を整数の固定配列として読み込むため、対局環境にPythonやニューラルネット実行環境は必要ない。
+学習にはPythonを使用する。CPUではNumPy、CUDA対応GPUでは任意依存のPyTorchを使用できる。対局クライアントはJavaのままであり、最終的には学習結果を整数の固定配列として読み込むため、対局環境にPythonやニューラルネット実行環境は必要ない。
 
 ## 全体の流れ
 
@@ -27,6 +27,7 @@ python -m training.train_model
 
 - Python 3.11以上
 - NumPy 2.x
+- CUDA学習時のみ、CUDA対応版PyTorch 2.xとNVIDIA GPU
 - 初回の棋譜取得時のみインターネット接続
 
 環境を確認する。
@@ -41,6 +42,15 @@ NumPyがない場合は次を実行する。
 ```powershell
 python -m pip install -r training/requirements.txt
 ```
+
+CUDA学習を使用する場合は、使用するCUDA環境に対応したPyTorchを導入する。まず共通依存を導入し、[PyTorch公式のStart Locally](https://pytorch.org/get-started/locally/)でWindows、Pip、使用するCUDA版を選んで表示されたインストールコマンドを実行する。`requirements-cuda.txt`には学習器が対応するPyTorchのバージョン範囲を記録している。
+
+```powershell
+python -m pip install -r training/requirements.txt
+python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+```
+
+最後の確認で`True`とGPU名が表示されればCUDAを利用できる。PyTorchは導入されていても`torch.cuda.is_available()`が`False`の場合、`--device auto`はNumPy CPUへフォールバックする。
 
 以後のコマンドは、必ずリポジトリ直下で実行する。スクリプトファイルを直接指定するのではなく、`python -m training...`形式を使用する。
 
@@ -69,7 +79,7 @@ WTHOR側は`2001-2015`、`2024`、`2025`の3アーカイブである。定石表
 生成されたデータセットは次の場所へ保存される。
 
 ```text
-.training/datasets/combined-evaluation-v2/
+.training/datasets/combined-evaluation-v3/
 ├─ train.npz
 ├─ validation.npz
 ├─ test.npz
@@ -78,9 +88,9 @@ WTHOR側は`2001-2015`、`2024`、`2025`の3アーカイブである。定石表
 
 `.training/`はGitの追跡対象外である。生棋譜や大きな学習データをGitHubへ登録しない。
 
-### 生成済みデータ
+### 基準データ規模
 
-既定条件で生成済みのデータは次のとおりである。
+同じ棋譜分割を用いたv2データの規模は次のとおりである。v3では特徴量列だけが増えるため、再生成後の局面数は同じになる。
 
 | 集合 | 棋譜数 | 採用局面数 |
 |---|---:|---:|
@@ -98,7 +108,7 @@ WTHOR側は`2001-2015`、`2024`、`2025`の3アーカイブである。定石表
 
 同一棋譜内の局面が複数の集合へ分かれないよう、棋譜単位で80%・10%・10%に分割する。さらに、訓練集合ですでに出現した同一局面は検証・テスト集合から除外する。
 
-生成条件、WTHOR ZIPの固定ハッシュ、NPZファイルのSHA-256は`dataset-v2.json`にも記録している。旧自己対局のみのデータは`dataset-v1.json`に記録したまま残している。
+元棋譜の生成条件とWTHOR ZIPの固定ハッシュは`dataset-v2.json`にも記録している。v3では特徴量形式が変わるため、既存のv2 NPZをそのまま学習へ使用できない。
 
 ### データセット生成オプション
 
@@ -106,7 +116,7 @@ WTHOR側は`2001-2015`、`2024`、`2025`の3アーカイブである。定石表
 |---|---|---|
 | `--source-dir` | `.training/sources/OthelloAI_Textbook` | 入力棋譜の保存場所 |
 | `--wthor-source-dir` | `.training/sources/wthor` | WTHOR ZIPの保存場所 |
-| `--output-dir` | `.training/datasets/combined-evaluation-v2` | データセット出力先 |
+| `--output-dir` | `.training/datasets/combined-evaluation-v3` | データセット出力先 |
 | `--source-files` | `20` | 読み込む公開棋譜ファイル数 |
 | `--max-games` | 制限なし | 読み込む自己対局の最大棋譜数。動作確認用 |
 | `--max-wthor-games` | 制限なし | 読み込むWTHORの最大棋譜数。動作確認用 |
@@ -150,7 +160,7 @@ WTHORを除外した比較データを作る場合は、別の出力先を指定
 ```powershell
 python -m training.build_dataset `
   --exclude-wthor `
-  --output-dir .training/datasets/self-play-only-v2 `
+  --output-dir .training/datasets/self-play-only-v3 `
   --overwrite
 ```
 
@@ -166,9 +176,9 @@ python -m training.verify_dataset
 - 各配列の長さと形状
 - 黒石と白石のビットボードが重なっていないこと
 - 石数と手数の整合性
-- パターンインデックスが`3^8`または`3^10`の範囲内であること
+- 各パターンインデックスが、そのパターン長に対応する`3^N`の範囲内であること
 - 訓練・検証・テスト間に同一局面がないこと
-- 抽出局面のモビリティ、フロンティア、パターン値の再計算結果
+- 抽出局面の合法手数、フロンティア、石差、角、安定辺、パリティ、パターン値の再計算結果
 
 成功時の最後の行は次のようになる。
 
@@ -223,8 +233,8 @@ python -m training.train_model
 
 ```powershell
 python -m training.train_model `
-  --dataset-dir .training/datasets/combined-evaluation-v2 `
-  --output-dir .training/models/pattern-evaluation-v1 `
+  --dataset-dir .training/datasets/combined-evaluation-v3 `
+  --output-dir .training/models/pattern-evaluation-v2 `
   --epochs 20 `
   --batch-size 1024 `
   --learning-rate 0.001 `
@@ -233,23 +243,52 @@ python -m training.train_model `
   --seed 20260720 `
   --label filled `
   --phase-starts 20,30,40,50 `
-  --score-scale 6400
+  --score-scale 6400 `
+  --device auto
 ```
 
 出力先がすでに存在する場合、誤上書きを防ぐため処理は停止する。作り直す場合だけ`--overwrite`を追加する。
 
 ### 学習モデル
 
-各局面段階に次の共有ネットワークを持つ。
+各局面段階に次の共有ネットワークを持つ。隠れ層にだけ`LeakyReLU(alpha=0.01)`を使用し、各分岐の最後は正負を自由に出力できる線形層である。
 
 - 8マス対角線: `16入力 → 16 → 16 → 1`
 - 辺と2個のXマス: `20入力 → 16 → 16 → 1`
 - 角三角形: `20入力 → 16 → 16 → 1`
-- モビリティと黒白フロンティア: `3入力 → 8 → 1`
-- 活性化関数: `LeakyReLU(alpha=0.01)`
-- 最終層: 4分岐の線形結合
+- 内部8マス直線: `19入力 → 16 → 16 → 1`。`line2`、`line3`、`line4`のクラス入力を含む
+- 長さ7・6の短対角線: `16入力 → 16 → 16 → 1`。長さクラス入力を含む
+- 角3×3: `18入力 → 16 → 16 → 1`
+- 自分と相手の合法手数: `2入力 → 8 → 1`
+- 自分と相手のフロンティア: `2入力 → 8 → 1`
+- 石差、角差、角合法手差、安定辺差、パリティ: それぞれ`1入力 → 4 → 1`
+- 最終層: 全分岐の加算
 
 学習にはAdam、平均二乗誤差、L2正則化を使用する。
+
+盤面特徴と教師値は手番側視点へ変換する。黒番・白番のどちらでも`own`が自分、`opponent`が相手となり、教師値は終局黒石差へ手番色の符号を掛けた値である。さらに各分岐を`0.5 × (f(own, opponent) - f(opponent, own))`として学習し、色交換時に評価値の符号が必ず反転する構造にする。
+
+### CPU・CUDAの選択
+
+`--device auto`が既定である。CUDA対応PyTorchとGPUを検出した場合はCUDA、それ以外はNumPy CPUを使用する。
+
+```powershell
+# CUDAを必須とし、利用できなければエラーにする
+python -m training.train_model --device cuda
+
+# 2台目のGPUを指定する
+python -m training.train_model --device cuda:1
+
+# CUDAで半精度演算も使用する
+python -m training.train_model --device cuda --amp
+
+# PyTorchの有無にかかわらずNumPy CPUを使用する
+python -m training.train_model --device cpu
+```
+
+CUDA学習後も`model-float.npz`へ同じ`float32`重みを保存し、評価表の生成と量子化はNumPyで行う。そのためCPU学習とCUDA学習の出力形式は共通である。
+
+GPUメモリに余裕がある場合は`--batch-size 4096`または`8192`も比較する。大きすぎる値でメモリ不足になった場合は1024へ戻す。`--amp`はメモリ使用量と学習時間を減らせる一方、最終誤差が変化する可能性があるため、通常精度との対局比較を残す。
 
 ### 局面段階
 
@@ -273,14 +312,14 @@ python -m training.train_model `
 | `filled` | 勝者へ終局時の空きマスを加算した石差。既定値で、参照記事と同じ方式 |
 | `disc` | 盤面上に実際に残った黒石数から白石数を引いた値 |
 
-教師値は黒視点で`-64`から`64`までを取り、学習時は64で割って正規化する。Java探索へ組み込む際に手番側視点へ変換する。
+保存される教師値は黒視点だが、学習時に手番色を掛けて手番側視点へ変換する。値は`-64`から`64`までを取り、64で割って正規化する。
 
 ### 学習オプション
 
 | オプション | 既定値 | 内容 |
 |---|---|---|
-| `--dataset-dir` | `.training/datasets/combined-evaluation-v2` | 入力データセット |
-| `--output-dir` | `.training/models/pattern-evaluation-v1` | モデル出力先 |
+| `--dataset-dir` | `.training/datasets/combined-evaluation-v3` | 入力データセット |
+| `--output-dir` | `.training/models/pattern-evaluation-v2` | モデル出力先 |
 | `--epochs` | `20` | 最大エポック数 |
 | `--batch-size` | `1024` | ミニバッチ局面数 |
 | `--learning-rate` | `0.001` | Adam学習率 |
@@ -291,6 +330,9 @@ python -m training.train_model `
 | `--phase-starts` | `20,30,40,50` | 4フェーズの開始手数 |
 | `--score-scale` | `6400` | Java用整数評価値への倍率 |
 | `--max-samples-per-phase` | 制限なし | 各フェーズの最大局面数。指定時はスモーク扱い |
+| `--device` | `auto` | `auto`、`cpu`、`cuda`、`cuda:N` |
+| `--amp` | 無効 | CUDA自動混合精度を使用する |
+| `--no-progress` | 無効 | コマンドライン進捗バーを非表示にする |
 | `--overwrite` | 無効 | 既存の出力ディレクトリを作り直す |
 
 すべてのオプションは次で確認できる。
@@ -301,7 +343,13 @@ python -m training.train_model --help
 
 ## 6. 学習中の表示
 
-各フェーズ・各エポックについて次が表示される。
+各フェーズ・各エポックについて、学習、訓練指標計算、検証、評価表生成の進捗率とETAが表示される。
+
+```text
+phase 0 epoch 1/20 train [############------------] 50.0% 688/1377 ETA 12.4s
+```
+
+エポック完了後には次の指標が表示される。
 
 ```text
 phase 0: {"epoch": 1, "train_mse": ..., "train_mae": ..., "validation_mse": ..., "validation_mae": ...}
@@ -321,7 +369,7 @@ phase 0: {"epoch": 1, "train_mse": ..., "train_mae": ..., "validation_mse": ...,
 本学習の出力は次のとおりである。
 
 ```text
-.training/models/pattern-evaluation-v1/
+.training/models/pattern-evaluation-v2/
 ├─ model-float.npz
 ├─ evaluation-tables.npz
 └─ metadata.json
@@ -329,17 +377,20 @@ phase 0: {"epoch": 1, "train_mse": ..., "train_mae": ..., "validation_mse": ...,
 
 ### `model-float.npz`
 
-NumPy学習モデルの全重みを`float32`で保存する。再評価、量子化方法の変更、学習結果の分析に使用する。Javaクライアントが直接読むファイルではない。
+CPUまたはCUDAで学習した全重みを共通の`float32`形式で保存する。再評価、量子化方法の変更、学習結果の分析に使用する。Javaクライアントが直接読むファイルではない。
 
 ### `evaluation-tables.npz`
 
 すべてのパターン状態を事前計算した`int16`表を保存する。
 
-- 対角線: `3^8 = 6,561`要素
-- 辺と2X: `3^10 = 59,049`要素
-- 角三角形: `3^10 = 59,049`要素
-- 追加特徴: モビリティと黒白フロンティアの3次元表
-- 各フェーズのバイアス
+- 主対角線: `3^8 = 6,561`要素
+- 辺と2X、角三角形: それぞれ`3^10 = 59,049`要素
+- 内部直線: `line2`、`line3`、`line4`ごとに`3^8`要素
+- 短対角線: `3^7`と`3^6`要素
+- 角3×3: `3^9 = 19,683`要素
+- 合法手数とフロンティア: それぞれ2次元表
+- 石差、角、安定辺、パリティ: それぞれ1次元表
+- 各フェーズのゼロ基準値。反対称性を保つため現在は常に0
 
 Java組み込み段階では、この内容をバージョン付きバイナリへ変換して読み込む。
 
@@ -373,13 +424,16 @@ python -m unittest training.test_pipeline -v
 - WTHOR記録スコアと終局再生結果の一致
 - パターンインデックスの範囲
 - フロンティア特徴の色対称性
+- 安定辺・パリティ特徴と手番視点教師値
+- 自分と相手を交換したとき評価値の符号が反転すること
+- コマンドライン進捗表示
 - モデルの順伝播・逆伝播結果が有限値であること
 
 ## 9. 再現性と再実行
 
 同じ公開棋譜、同じ分割シード、同じ採取条件を使用すると、同じデータセットNPZとSHA-256が生成される。WTHORは同名ファイルが更新される可能性があるため、定石生成時の3アーカイブのSHA-256をコードと`dataset-v2.json`に固定している。不一致時は生成を中止する。
 
-学習も同じNumPy環境、乱数シード、学習条件では再現するよう設計している。ただし、NumPyやBLAS実装が異なる環境では浮動小数演算順序により末尾の値が異なる可能性がある。
+CPU学習も同じNumPy環境、乱数シード、学習条件では再現するよう設計している。ただし、NumPyやBLAS実装が異なる環境では浮動小数演算順序により末尾の値が異なる可能性がある。CUDA学習はGPU、CUDA、PyTorch、混合精度の違いにより同一シードでも末尾の値が一致しない場合がある。
 
 現在の学習器は途中チェックポイントからの再開には対応していない。中断した場合は同じコマンドを`--overwrite`付きで再実行する。本学習結果を残したまま別条件を試す場合は、必ず別の`--output-dir`を指定する。
 
@@ -396,7 +450,7 @@ python -m training.train_model `
 
 この段階で完成しているのは、データ生成、検証、学習、テスト評価、整数表出力までである。
 
-`evaluation-tables.npz`はまだJavaの`Evaluator`へ接続していない。既定AIは引き続き`v0.1.0`の手設計評価関数を使用する。次段階でバイナリ形式、Javaローダー、フェーズ補間、手番視点変換、フォールバック、速度測定、ベースライン対局比較を実装する。
+`evaluation-tables.npz`はまだJavaの`Evaluator`へ接続していない。既定AIは引き続き`v0.1.0`の手設計評価関数を使用する。次段階でバイナリ形式、Javaローダー、フェーズ補間、手番視点での表参照、フォールバック、速度測定、ベースライン対局比較を実装する。
 
 ## 出典とライセンス
 
