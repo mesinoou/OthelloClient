@@ -1,6 +1,6 @@
 # 評価関数学習プログラム
 
-このディレクトリには、公開自己対局棋譜から学習データセットを作成し、局所パターン評価モデルを学習するためのオフラインツールを収録している。
+このディレクトリには、公開自己対局棋譜と定石生成に用いたWTHOR棋譜から学習データセットを作成し、局所パターン評価モデルを学習するためのオフラインツールを収録している。
 
 学習にはPythonとNumPyを使用する。対局クライアントはJavaのままであり、最終的には学習結果を整数の固定配列として読み込むため、対局環境にPythonやニューラルネット実行環境は必要ない。
 
@@ -16,7 +16,7 @@ python -m training.train_model
 
 処理内容は次のとおりである。
 
-1. 公開自己対局棋譜20,000局を取得する
+1. 公開自己対局棋譜20,000局とWTHOR棋譜58,252局を取得する
 2. 全着手を合法手検証しながら再生する
 3. 訓練・検証・テストデータを生成する
 4. データセットのハッシュと特徴量を検証する
@@ -52,18 +52,24 @@ python -m pip install -r training/requirements.txt
 python -m training.build_dataset
 ```
 
-既定では、`Nyanyan/OthelloAI_Textbook`の固定コミットから20個の棋譜ファイル、合計20,000局を取得する。取得元とMITライセンスは`THIRD_PARTY.md`に記録している。
+既定では、次の78,252局を取得する。
+
+- `Nyanyan/OthelloAI_Textbook`の固定コミットにある自己対局20,000局
+- `data/opening-book.bin`の生成に使ったWTHOR 58,252局
+
+WTHOR側は`2001-2015`、`2024`、`2025`の3アーカイブである。定石表に登録された4,252局面だけを加えるのではなく、元になった全棋譜から8手目から52手目までの局面を採取する。取得元、固定条件、利用条件は`THIRD_PARTY.md`に記録している。
 
 入力棋譜は次の場所へ保存される。
 
 ```text
 .training/sources/OthelloAI_Textbook/
+.training/sources/wthor/
 ```
 
 生成されたデータセットは次の場所へ保存される。
 
 ```text
-.training/datasets/nyanyan-self-play-v1/
+.training/datasets/combined-evaluation-v2/
 ├─ train.npz
 ├─ validation.npz
 ├─ test.npz
@@ -78,22 +84,33 @@ python -m training.build_dataset
 
 | 集合 | 棋譜数 | 採用局面数 |
 |---|---:|---:|
-| 訓練 | 15,978 | 719,010 |
-| 検証 | 2,063 | 3,737 |
-| テスト | 1,959 | 3,230 |
+| 訓練 | 62,611 | 2,816,098 |
+| 検証 | 7,800 | 197,683 |
+| テスト | 7,841 | 201,143 |
+
+採用局面のソース別内訳は次のとおりである。
+
+| 集合 | 自己対局 | WTHOR |
+|---|---:|---:|
+| 訓練 | 719,010 | 2,097,088 |
+| 検証 | 3,737 | 193,946 |
+| テスト | 3,230 | 197,913 |
 
 同一棋譜内の局面が複数の集合へ分かれないよう、棋譜単位で80%・10%・10%に分割する。さらに、訓練集合ですでに出現した同一局面は検証・テスト集合から除外する。
 
-生成条件とNPZファイルのSHA-256は`dataset-v1.json`にも記録している。
+生成条件、WTHOR ZIPの固定ハッシュ、NPZファイルのSHA-256は`dataset-v2.json`にも記録している。旧自己対局のみのデータは`dataset-v1.json`に記録したまま残している。
 
 ### データセット生成オプション
 
 | オプション | 既定値 | 内容 |
 |---|---|---|
 | `--source-dir` | `.training/sources/OthelloAI_Textbook` | 入力棋譜の保存場所 |
-| `--output-dir` | `.training/datasets/nyanyan-self-play-v1` | データセット出力先 |
+| `--wthor-source-dir` | `.training/sources/wthor` | WTHOR ZIPの保存場所 |
+| `--output-dir` | `.training/datasets/combined-evaluation-v2` | データセット出力先 |
 | `--source-files` | `20` | 読み込む公開棋譜ファイル数 |
-| `--max-games` | 制限なし | 読み込む最大棋譜数。動作確認用 |
+| `--max-games` | 制限なし | 読み込む自己対局の最大棋譜数。動作確認用 |
+| `--max-wthor-games` | 制限なし | 読み込むWTHORの最大棋譜数。動作確認用 |
+| `--exclude-wthor` | 無効 | WTHORを除外し、自己対局だけで生成する |
 | `--start-ply` | `8` | 採取を始める手数 |
 | `--end-ply` | `52` | 採取を終える手数 |
 | `--stride` | `1` | 何手ごとに局面を採取するか |
@@ -115,6 +132,7 @@ python -m training.build_dataset --help
 ```powershell
 python -m training.build_dataset `
   --max-games 100 `
+  --max-wthor-games 100 `
   --output-dir .training/datasets/smoke `
   --overwrite
 ```
@@ -126,6 +144,15 @@ python -m training.build_dataset --no-download --overwrite
 ```
 
 `--overwrite`を指定すると、指定した`--output-dir`は削除してから再生成される。必要なモデルや独自データが同じディレクトリにないことを確認して使用する。
+
+WTHORを除外した比較データを作る場合は、別の出力先を指定する。
+
+```powershell
+python -m training.build_dataset `
+  --exclude-wthor `
+  --output-dir .training/datasets/self-play-only-v2 `
+  --overwrite
+```
 
 ## 3. データセットの検証
 
@@ -196,7 +223,7 @@ python -m training.train_model
 
 ```powershell
 python -m training.train_model `
-  --dataset-dir .training/datasets/nyanyan-self-play-v1 `
+  --dataset-dir .training/datasets/combined-evaluation-v2 `
   --output-dir .training/models/pattern-evaluation-v1 `
   --epochs 20 `
   --batch-size 1024 `
@@ -252,7 +279,7 @@ python -m training.train_model `
 
 | オプション | 既定値 | 内容 |
 |---|---|---|
-| `--dataset-dir` | `.training/datasets/nyanyan-self-play-v1` | 入力データセット |
+| `--dataset-dir` | `.training/datasets/combined-evaluation-v2` | 入力データセット |
 | `--output-dir` | `.training/models/pattern-evaluation-v1` | モデル出力先 |
 | `--epochs` | `20` | 最大エポック数 |
 | `--batch-size` | `1024` | ミニバッチ局面数 |
@@ -342,13 +369,15 @@ python -m unittest training.test_pipeline -v
 
 - Java盤面と公開棋譜の左右反転座標
 - 公開棋譜先頭手順の合法性
+- WTHORのZIP/WTB解析とサーバー座標への変換
+- WTHOR記録スコアと終局再生結果の一致
 - パターンインデックスの範囲
 - フロンティア特徴の色対称性
 - モデルの順伝播・逆伝播結果が有限値であること
 
 ## 9. 再現性と再実行
 
-同じ公開棋譜、同じ分割シード、同じ採取条件を使用すると、同じデータセットNPZとSHA-256が生成される。
+同じ公開棋譜、同じ分割シード、同じ採取条件を使用すると、同じデータセットNPZとSHA-256が生成される。WTHORは同名ファイルが更新される可能性があるため、定石生成時の3アーカイブのSHA-256をコードと`dataset-v2.json`に固定している。不一致時は生成を中止する。
 
 学習も同じNumPy環境、乱数シード、学習条件では再現するよう設計している。ただし、NumPyやBLAS実装が異なる環境では浮動小数演算順序により末尾の値が異なる可能性がある。
 
@@ -371,4 +400,4 @@ python -m training.train_model `
 
 ## 出典とライセンス
 
-公開棋譜とパターン形状の出典、固定コミット、ライセンスは`THIRD_PARTY.md`を参照する。MITライセンス本文は`third_party/OthelloAI_Textbook-LICENSE.txt`に保存している。
+公開棋譜とパターン形状の出典、固定コミット、利用条件は`THIRD_PARTY.md`を参照する。MITライセンス本文は`third_party/OthelloAI_Textbook-LICENSE.txt`に保存している。WTHORの生ZIP/WTBは再配布せず、ローカルの`.training/sources/wthor/`だけに保存する。

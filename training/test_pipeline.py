@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import struct
 import unittest
 
 import numpy as np
@@ -12,9 +13,11 @@ from training.othello import (
     initial_position,
     legal_moves,
     source_coordinate_to_square,
+    wthor_move_code_to_square,
 )
 from training.patterns import PATTERN_GROUPS, encode_group
 from training.train_model import PatternModel
+from training.wthor import read_wtb
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
@@ -42,6 +45,25 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             black, white = apply_move(black, white, player, square)
             player = -player
         self.assertEqual(10, (black | white).bit_count())
+
+    def test_wthor_first_move_matches_server_orientation(self) -> None:
+        black, white = initial_position()
+        square = wthor_move_code_to_square(56)
+        self.assertNotEqual(0, legal_moves(black, white) & (1 << square))
+
+    def test_wthor_reader_parses_game_record(self) -> None:
+        data = bytearray(16 + 68)
+        struct.pack_into("<i", data, 4, 1)
+        data[12] = 8
+        data[16 + 6] = 40
+        data[16 + 8] = 56
+
+        games = read_wtb(bytes(data), "test.zip", "WTH_2099.WTB")
+
+        self.assertEqual(1, len(games))
+        self.assertEqual(40, games[0].black_score)
+        self.assertEqual((wthor_move_code_to_square(56),), games[0].moves)
+        self.assertEqual("wthor:test.zip:WTH_2099.WTB:0", games[0].split_key)
 
     def test_patterns_stay_inside_declared_ranges(self) -> None:
         black, white = initial_position()

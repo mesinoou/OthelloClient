@@ -143,6 +143,15 @@ def source_coordinate_to_square(coordinate: str) -> int:
     return y * 8 + (7 - source_x)
 
 
+def wthor_move_code_to_square(move_code: int) -> int:
+    """Convert a WTHOR code and mirror rows into the server orientation."""
+    x = move_code % 10 - 1
+    y = move_code // 10 - 1
+    if not 0 <= x < 8 or not 0 <= y < 8:
+        raise InvalidRecordError(f"invalid WTHOR move code: {move_code}")
+    return (7 - y) * 8 + x
+
+
 def neighbors(board: int) -> int:
     result = 0
     for dx, dy in _DIRECTIONS:
@@ -168,6 +177,21 @@ def replay_record(
     normalized = record.strip().lower()
     if len(normalized) % 2 != 0:
         raise InvalidRecordError("record length must be even")
+
+    squares = tuple(
+        source_coordinate_to_square(normalized[offset : offset + 2])
+        for offset in range(0, len(normalized), 2)
+    )
+    return replay_squares(squares, start_ply, end_ply, stride)
+
+
+def replay_squares(
+    squares: tuple[int, ...],
+    start_ply: int,
+    end_ply: int,
+    stride: int,
+) -> ReplayResult:
+    """Replay Java-oriented square indices and collect sampled positions."""
     if stride < 1:
         raise ValueError("stride must be positive")
 
@@ -176,8 +200,7 @@ def replay_record(
     passes = 0
     positions: list[Position] = []
 
-    for offset in range(0, len(normalized), 2):
-        ply = offset // 2
+    for ply, square in enumerate(squares):
         own = black if player == BLACK else white
         other = white if player == BLACK else black
         moves = legal_moves(own, other)
@@ -196,11 +219,11 @@ def replay_record(
         ):
             positions.append(Position(black, white, player, ply))
 
-        coordinate = normalized[offset : offset + 2]
-        square = source_coordinate_to_square(coordinate)
+        if not 0 <= square < 64:
+            raise InvalidRecordError(f"invalid square {square} at ply {ply}")
         if not (moves & (1 << square)):
             raise InvalidRecordError(
-                f"illegal move {coordinate} at ply {ply}"
+                f"illegal square {square} at ply {ply}"
             )
         black, white = apply_move(black, white, player, square)
         player = -player

@@ -56,7 +56,11 @@ def position_keys(data: dict[str, np.ndarray]) -> np.ndarray:
     return np.unique(keys)
 
 
-def verify_arrays(name: str, data: dict[str, np.ndarray]) -> None:
+def verify_arrays(
+    name: str,
+    data: dict[str, np.ndarray],
+    source_ids: set[int] | None = None,
+) -> None:
     count = len(data["player"])
     for field, values in data.items():
         if len(values) != count:
@@ -65,6 +69,11 @@ def verify_arrays(name: str, data: dict[str, np.ndarray]) -> None:
         raise ValueError(f"{name}: overlapping black and white bitboards")
     if not np.all(np.isin(data["player"], (-1, 1))):
         raise ValueError(f"{name}: invalid player value")
+    if source_ids is not None:
+        if "source" not in data:
+            raise ValueError(f"{name}: missing source array")
+        if not np.all(np.isin(data["source"], tuple(source_ids))):
+            raise ValueError(f"{name}: invalid source value")
     occupied = np.fromiter(
         (int(value).bit_count() for value in data["black"] | data["white"]),
         dtype=np.uint8,
@@ -130,7 +139,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-dir",
         type=Path,
-        default=Path(".training/datasets/nyanyan-self-play-v1"),
+        default=Path(".training/datasets/combined-evaluation-v2"),
         help="dataset directory to verify",
     )
     parser.add_argument(
@@ -154,6 +163,11 @@ def main() -> int:
         metadata = json.loads(
             (args.dataset_dir / "metadata.json").read_text(encoding="utf-8")
         )
+        source_ids = None
+        if metadata.get("dataset_format", 1) >= 2:
+            source_ids = {
+                int(source["id"]) for source in metadata["sources"].values()
+            }
         splits = {}
         for name in ("train", "validation", "test"):
             path = args.dataset_dir / f"{name}.npz"
@@ -162,7 +176,7 @@ def main() -> int:
             if actual_hash != expected_hash:
                 raise ValueError(f"{path}: SHA-256 mismatch")
             data = load_split(path)
-            verify_arrays(name, data)
+            verify_arrays(name, data, source_ids)
             verify_sampled_features(name, data, args.sample_size, args.seed)
             splits[name] = data
 
@@ -179,6 +193,15 @@ def main() -> int:
             )
             if len(overlap) != 0:
                 raise ValueError(f"{left}/{right}: {len(overlap)} positions overlap")
+            game_overlap = np.intersect1d(
+                np.unique(splits[left]["game_id"]),
+                np.unique(splits[right]["game_id"]),
+                assume_unique=True,
+            )
+            if len(game_overlap) != 0:
+                raise ValueError(
+                    f"{left}/{right}: {len(game_overlap)} games overlap"
+                )
 
         report = {}
         boundaries = np.asarray([30, 40, 50], dtype=np.uint8)
@@ -192,6 +215,21 @@ def main() -> int:
                     int(data["mobility"].max()),
                 ],
             }
+            if source_ids is not None:
+                report[name]["source_counts"] = {
+                    source_name: int(
+                        np.count_nonzero(data["source"] == source["id"])
+                    )
+                    for source_name, source in metadata["sources"].items()
+                }
+                expected_counts = {
+                    source_name: int(source["positions"])
+                    for source_name, source in metadata["stats"][name][
+                        "sources"
+                    ].items()
+                }
+                if report[name]["source_counts"] != expected_counts:
+                    raise ValueError(f"{name}: source position counts differ")
         print(json.dumps(report, indent=2))
         print("dataset verification: PASS")
     except (OSError, ValueError, KeyError) as error:

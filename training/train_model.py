@@ -547,7 +547,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-dir",
         type=Path,
-        default=Path(".training/datasets/nyanyan-self-play-v1"),
+        default=Path(".training/datasets/combined-evaluation-v2"),
         help="input dataset directory",
     )
     parser.add_argument(

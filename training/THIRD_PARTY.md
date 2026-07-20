@@ -15,3 +15,18 @@ metadata format in this repository are independent implementations.
 
 Downloaded records and generated datasets are stored under `.training/` and
 are not committed to this repository.
+
+The combined v2 dataset also downloads the same Federation Francaise
+d'Othello WTHOR archives used to build `data/opening-book.bin`:
+
+- Source page: https://www.ffothello.org/informatique/la-base-wthor/
+- Format: https://www.ffothello.org/wthor/Format_WThor.pdf
+- Archives: `WTH_2001-2015.ZIP`, `WTH_2024.ZIP`, `WTH_2025.ZIP`
+- Games: 58,252
+- Archive SHA-256 values: see `dataset-v2.json`
+
+The official source invites users to download the database freely and
+describes evaluation tuning and opening-book preparation as intended uses. No
+separate redistribution license was found. The raw ZIP/WTB files therefore
+remain local under `.training/sources/wthor/` and are not redistributed by this
+repository.
