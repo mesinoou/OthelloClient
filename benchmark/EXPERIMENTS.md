@@ -30,7 +30,8 @@
 | FIX-001 | accepted | `benchmark/parallel-v1-20260721` | `codex/root-parallel-research-fix` | 並行中の共有alpha更新後もfail-high手を再探索する | `benchmark/results/fix-001-parallel-research-2026-07-21.md` | 固定深さ448結果で不一致0件、4Tノード約4.9%増 | 正当性修正として採用 |
 | SEARCH-002 | rejected | `benchmark/parallel-v1.1-20260721` | `codex/transposition-contention` | 置換表のモニタ競合を計測し、同期方式変更の必要性を判定 | `benchmark/results/search-002-transposition-contention-2026-07-21.md` | 深さ10の待機時間は4Tで0.28%、8Tで0.07% | ロック変更は不採用、競合計測機能だけ採用 |
 | SEARCH-003 | rejected | `benchmark/parallel-v2-20260721` | `codex/history-ordering` | scaled history heuristicでbeta cutoff手を優先 | `benchmark/results/search-003-history-ordering-2026-07-21.md` | 別seedの4Tでノード1.84%、時間0.96%短縮、標準500ms深さは微減 | 効果が小さいため不採用 |
-| SEARCH-004 | planned | `benchmark/parallel-v2-20260721` | `codex/killer-ordering` | killer heuristicだけを追加して手順整列を強化 | 固定深さノード数、500 ms到達深さ、Edax L7 | pending | historyを含めず単独測定 |
+| SEARCH-004 | rejected | `benchmark/parallel-v2-20260721` | `codex/killer-ordering` | killer heuristicだけを追加して手順整列を強化 | `benchmark/results/search-004-killer-ordering-2026-07-21.md` | 別seedの4Tでノード0.58%増、標準500 ms深さは9.69から9.56へ低下 | 性能ゲート未通過のため不採用 |
+| SEARCH-005 | planned | `benchmark/parallel-v2-20260721` | `codex/aspiration-window` | 反復深化の前回評価値を中心にaspiration windowを適用 | 固定深さノード数、再探索率、500 ms到達深さ、Edax L7 | pending | killerとhistoryを含めず単独測定 |
 
 ## Model baseline
 
