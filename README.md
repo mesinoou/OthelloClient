@@ -71,6 +71,8 @@ java -cp .build EvaluationMatchRunner `
 
 ## テスト
 
+改良実験の実行順、変更種別ごとの必須項目、性能・棋力の合格条件は[benchmark/TEST_PLAN.md](benchmark/TEST_PLAN.md)にまとめている。以下は個別コマンドの参照用である。
+
 ビルド後、次の回帰テストを実行する。
 
 ```powershell
