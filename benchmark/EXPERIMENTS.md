@@ -25,7 +25,7 @@
 | ID | Status | Base | Branch | Single change | Validation / benchmark | Result | Decision |
 |---|---|---|---|---|---|---|---|
 | BASE-20260721 | frozen | `50313ca` | `feature/learned-evaluation` | CUDA e80学習評価を含む現行基準 | `benchmark/results/learned-e80-2026-07-21.md` | Edax L7 100局で50-1-49 | `baseline/learned-e80-20260721`として固定 |
-| BENCH-001 | infrastructure | `baseline/learned-e80-20260721` | `codex/parallel-benchmark-v1` | 並列探索の再現可能な固定深さ・固定時間計測を追加 | `ParallelSearchBenchmark`、全回帰テスト | pending | 探索動作は変更しない |
+| BENCH-001 | infrastructure | `baseline/learned-e80-20260721` | `codex/parallel-benchmark-v1` | 並列探索の再現可能な固定深さ・固定時間計測を追加 | `benchmark/results/parallel-search-v1-2026-07-21.md` | 固定深さ128結果で不一致0件、4T 1.68倍、8T 1.89倍 | 計測基盤として採用、探索動作は変更なし |
 | SEARCH-001 | planned | `baseline/learned-e80-20260721` | `codex/root-parallel-worker-loop` | 指し手単位Futureを固定ワーカーループへ変更 | BENCH-001とEdax L7 100局 | pending | BENCH-001完了後に開始 |
 
 ## Model baseline
