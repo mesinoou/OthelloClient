@@ -149,6 +149,13 @@ public final class SearchEngineTest {
                         + index
                 );
             }
+            int maximumWorkerTasks = (depth - 2) * 3;
+            if (parallel.parallelTasks() > maximumWorkerTasks) {
+                throw new AssertionError(
+                    "ルート並列タスク数がワーカー上限を超えています: sample="
+                        + index + ", tasks=" + parallel.parallelTasks()
+                );
+            }
             sequentialEngine.shutdown();
             parallelEngine.shutdown();
         }

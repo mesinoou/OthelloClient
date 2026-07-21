@@ -462,26 +462,31 @@ public final class SearchEngine {
             packBest(firstScore, 0, firstSquare)
         );
 
-        CountDownLatch workersDone = new CountDownLatch(moveCount - 1);
-        List<Future<RootMoveResult>> futures = new ArrayList<>(moveCount - 1);
-        List<WorkerCompletion> completions = new ArrayList<>(moveCount - 1);
+        AtomicInteger nextMoveIndex = new AtomicInteger(1);
+        int workerTaskCount = Math.min(workerThreadCount, moveCount - 1);
+        CountDownLatch workersDone = new CountDownLatch(workerTaskCount);
+        List<Future<RootMoveResult>> futures = new ArrayList<>(
+            workerTaskCount
+        );
+        List<WorkerCompletion> completions = new ArrayList<>(workerTaskCount);
         boolean completed = false;
         try {
-            for (int index = 1; index < moveCount; index++) {
-                final int moveIndex = index;
-                final long move = context.moves[0][index];
+            for (int taskIndex = 0;
+                taskIndex < workerTaskCount;
+                taskIndex++) {
                 WorkerCompletion completion = new WorkerCompletion(
                     workersDone
                 );
                 completions.add(completion);
                 Future<RootMoveResult> future = workerPool.submit(
-                    () -> searchParallelRootMove(
+                    () -> searchParallelRootMovesWorker(
                         player,
                         opponent,
-                        move,
-                        moveIndex,
+                        context.moves[0],
+                        moveCount,
                         depth,
                         sharedBest,
+                        nextMoveIndex,
                         completion
                     )
                 );
@@ -489,6 +494,16 @@ public final class SearchEngine {
                 activeTasks.add(future);
             }
 
+            searchParallelRootMoves(
+                player,
+                opponent,
+                context.moves[0],
+                moveCount,
+                depth,
+                sharedBest,
+                nextMoveIndex,
+                context
+            );
             for (Future<RootMoveResult> future : futures) {
                 RootMoveResult moveResult = await(future);
                 if (moveResult.aborted) {
@@ -517,13 +532,14 @@ public final class SearchEngine {
         );
     }
 
-    private RootMoveResult searchParallelRootMove(
+    private RootMoveResult searchParallelRootMovesWorker(
         long player,
         long opponent,
-        long move,
-        int moveIndex,
+        long[] rootMoves,
+        int moveCount,
         int depth,
         AtomicLong sharedBest,
+        AtomicInteger nextMoveIndex,
         WorkerCompletion completion
     ) {
         if (!completion.start()) {
@@ -533,7 +549,43 @@ public final class SearchEngine {
         workerContext.reset();
         boolean aborted = false;
         try {
-            checkStop(true, workerContext);
+            searchParallelRootMoves(
+                player,
+                opponent,
+                rootMoves,
+                moveCount,
+                depth,
+                sharedBest,
+                nextMoveIndex,
+                workerContext
+            );
+        } catch (SearchAbortedException ignored) {
+            aborted = true;
+        } finally {
+            parallelMetrics.add(workerContext);
+            completion.finish();
+        }
+        return new RootMoveResult(aborted);
+    }
+
+    private void searchParallelRootMoves(
+        long player,
+        long opponent,
+        long[] rootMoves,
+        int moveCount,
+        int depth,
+        AtomicLong sharedBest,
+        AtomicInteger nextMoveIndex,
+        SearchContext searchContext
+    ) {
+        while (true) {
+            checkStop(true, searchContext);
+            int moveIndex = nextMoveIndex.getAndIncrement();
+            if (moveIndex >= moveCount) {
+                return;
+            }
+
+            long move = rootMoves[moveIndex];
             int alpha = unpackBestScore(sharedBest.get());
             int score = searchRootMove(
                 player,
@@ -542,12 +594,12 @@ public final class SearchEngine {
                 depth,
                 alpha,
                 alpha + 1,
-                workerContext
+                searchContext
             );
 
-            int currentAlpha = unpackBestScore(sharedBest.get());
-            if (score > currentAlpha) {
-                workerContext.pvsResearches++;
+            if (score > alpha) {
+                searchContext.pvsResearches++;
+                int currentAlpha = unpackBestScore(sharedBest.get());
                 score = searchRootMove(
                     player,
                     opponent,
@@ -555,19 +607,13 @@ public final class SearchEngine {
                     depth,
                     currentAlpha,
                     INFINITY,
-                    workerContext
+                    searchContext
                 );
             }
 
             int square = Long.numberOfTrailingZeros(move);
             updateSharedBest(sharedBest, score, moveIndex, square);
-        } catch (SearchAbortedException ignored) {
-            aborted = true;
-        } finally {
-            parallelMetrics.add(workerContext);
-            completion.finish();
         }
-        return new RootMoveResult(aborted);
     }
 
     private int searchRootMove(
