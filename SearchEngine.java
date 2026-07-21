@@ -23,10 +23,12 @@ public final class SearchEngine {
     private static final int STOP_CHECK_MASK = 1023;
     private static final int PARALLEL_MINIMUM_DEPTH = 3;
     private static final int MINIMUM_TT_DEPTH = 2;
+    private static final int ETC_MINIMUM_DEPTH = 5;
     private static final int LMR_MINIMUM_DEPTH = 5;
     private static final int LMR_MINIMUM_MOVE_INDEX = 4;
     private static final int ENDGAME_FALLBACK_DEPTH = 4;
     private static final int ODD_REGION_BONUS = 1;
+    private static final int NO_ETC_CUTOFF = Integer.MIN_VALUE;
     private static final long CORNERS = 0x8100000000000081L;
 
     private final PositionEvaluator evaluator;
@@ -35,6 +37,7 @@ public final class SearchEngine {
     private final int endgameThresholdOverride;
     private final boolean lmrEnabled;
     private final boolean exactLastNSolverEnabled;
+    private final boolean enhancedTranspositionCutoffEnabled;
     private final SearchContext context = new SearchContext();
     private final ThreadLocal<SearchContext> workerContexts =
         ThreadLocal.withInitial(SearchContext::new);
@@ -108,6 +111,26 @@ public final class SearchEngine {
         boolean lmrEnabled,
         boolean exactLastNSolverEnabled
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean enhancedTranspositionCutoffEnabled
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
@@ -121,6 +144,8 @@ public final class SearchEngine {
         this.endgameThresholdOverride = endgameThresholdOverride;
         this.lmrEnabled = lmrEnabled;
         this.exactLastNSolverEnabled = exactLastNSolverEnabled;
+        this.enhancedTranspositionCutoffEnabled =
+            enhancedTranspositionCutoffEnabled;
     }
 
     public String evaluatorDescription() {
@@ -356,7 +381,10 @@ public final class SearchEngine {
             0,
             exactSolution,
             endgameEmpties,
-            parallelMetrics.workerNodesSnapshot()
+            parallelMetrics.workerNodesSnapshot(),
+            context.etcProbes + parallelMetrics.etcProbes.get(),
+            context.etcHits + parallelMetrics.etcHits.get(),
+            context.etcCutoffs + parallelMetrics.etcCutoffs.get()
         );
     }
 
@@ -864,6 +892,22 @@ public final class SearchEngine {
             return score;
         }
 
+        if (enhancedTranspositionCutoffEnabled
+            && table != null
+            && etcEligible(depth)) {
+            int etcScore = enhancedTranspositionCutoff(
+                player,
+                opponent,
+                legalMoves,
+                depth,
+                beta,
+                searchContext
+            );
+            if (etcScore != NO_ETC_CUTOFF) {
+                return etcScore;
+            }
+        }
+
         int orderingTableBestSquare = lmrEnabled
             && nullWindow
             && depth >= LMR_MINIMUM_DEPTH
@@ -989,6 +1033,47 @@ public final class SearchEngine {
             );
         }
         return bestScore;
+    }
+
+    private int enhancedTranspositionCutoff(
+        long player,
+        long opponent,
+        long legalMoves,
+        int depth,
+        int beta,
+        SearchContext searchContext
+    ) {
+        long remaining = legalMoves;
+        while (remaining != 0L) {
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+
+            searchContext.etcProbes++;
+            long probe = table.probe(nextOpponent, nextPlayer);
+            if (!etcBoundUsable(probe, depth - 1)) {
+                continue;
+            }
+            searchContext.etcHits++;
+            int parentLowerBound = etcParentLowerBound(probe);
+            if (parentLowerBound < beta) {
+                continue;
+            }
+
+            searchContext.etcCutoffs++;
+            store(
+                player,
+                opponent,
+                depth,
+                parentLowerBound,
+                TranspositionTable.LOWER_BOUND,
+                Long.numberOfTrailingZeros(move)
+            );
+            return parentLowerBound;
+        }
+        return NO_ETC_CUTOFF;
     }
 
     private int solveExactLastN(
@@ -1347,6 +1432,24 @@ public final class SearchEngine {
         return depth >= MINIMUM_TT_DEPTH;
     }
 
+    static boolean etcEligible(int depth) {
+        return depth >= ETC_MINIMUM_DEPTH;
+    }
+
+    static boolean etcBoundUsable(long probe, int requiredDepth) {
+        if (!TranspositionTable.probeFound(probe)
+            || TranspositionTable.probeDepth(probe) < requiredDepth) {
+            return false;
+        }
+        byte bound = TranspositionTable.probeBound(probe);
+        return bound == TranspositionTable.EXACT
+            || bound == TranspositionTable.UPPER_BOUND;
+    }
+
+    static int etcParentLowerBound(long probe) {
+        return -TranspositionTable.probeValue(probe);
+    }
+
     static boolean lmrEligible(
         int depth,
         int moveIndex,
@@ -1689,6 +1792,9 @@ public final class SearchEngine {
         private final AtomicLong pvsResearches = new AtomicLong();
         private final AtomicLong lmrSearches = new AtomicLong();
         private final AtomicLong lmrResearches = new AtomicLong();
+        private final AtomicLong etcProbes = new AtomicLong();
+        private final AtomicLong etcHits = new AtomicLong();
+        private final AtomicLong etcCutoffs = new AtomicLong();
         private final AtomicInteger tasks = new AtomicInteger();
         private final ConcurrentHashMap<String, AtomicLong> workerNodes =
             new ConcurrentHashMap<>();
@@ -1700,6 +1806,9 @@ public final class SearchEngine {
             pvsResearches.set(0L);
             lmrSearches.set(0L);
             lmrResearches.set(0L);
+            etcProbes.set(0L);
+            etcHits.set(0L);
+            etcCutoffs.set(0L);
             tasks.set(0);
             workerNodes.clear();
         }
@@ -1711,6 +1820,9 @@ public final class SearchEngine {
             pvsResearches.addAndGet(searchContext.pvsResearches);
             lmrSearches.addAndGet(searchContext.lmrSearches);
             lmrResearches.addAndGet(searchContext.lmrResearches);
+            etcProbes.addAndGet(searchContext.etcProbes);
+            etcHits.addAndGet(searchContext.etcHits);
+            etcCutoffs.addAndGet(searchContext.etcCutoffs);
             tasks.incrementAndGet();
             workerNodes.computeIfAbsent(
                 Thread.currentThread().getName(),

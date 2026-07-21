@@ -11,6 +11,8 @@ public final class SearchEngineTest {
         testAgainstReferenceNegamax();
         testEndgameThresholdSelection();
         testTranspositionTableDepthGate();
+        testEnhancedTranspositionCutoffBounds();
+        testEnhancedTranspositionCutoffConsistency();
         testSpecializedLeafSearch();
         testExactLastNSolverEligibility();
         testExactLastNSolverMatchesGeneric();
@@ -250,6 +252,107 @@ public final class SearchEngineTest {
         if (!SearchEngine.ttEligible(2)) {
             throw new AssertionError("depth 2でTTが無効です。");
         }
+    }
+
+    private static void testEnhancedTranspositionCutoffBounds() {
+        if (SearchEngine.etcEligible(4) || !SearchEngine.etcEligible(5)) {
+            throw new AssertionError("ETCのdepth境界が不正です。");
+        }
+
+        long player = 0x0000_0008_1000_0000L;
+        long opponent = 0x0000_0010_0800_0000L;
+        TranspositionTable table = new TranspositionTable(1);
+        long missing = table.probe(player, opponent);
+        if (SearchEngine.etcBoundUsable(missing, 4)) {
+            throw new AssertionError("未登録entryをETCが利用しました。");
+        }
+
+        table.store(
+            player,
+            opponent,
+            4,
+            -73,
+            TranspositionTable.UPPER_BOUND,
+            12
+        );
+        long upper = table.probe(player, opponent);
+        if (!SearchEngine.etcBoundUsable(upper, 4)
+            || SearchEngine.etcBoundUsable(upper, 5)) {
+            throw new AssertionError("ETCのrequired depth判定が不正です。");
+        }
+        assertEquals(
+            73,
+            SearchEngine.etcParentLowerBound(upper),
+            "ETC upper-bound negation"
+        );
+
+        table.store(
+            player,
+            opponent,
+            4,
+            25,
+            TranspositionTable.LOWER_BOUND,
+            12
+        );
+        if (SearchEngine.etcBoundUsable(table.probe(player, opponent), 4)) {
+            throw new AssertionError("child lower boundをETCが利用しました。");
+        }
+
+        table.store(
+            player,
+            opponent,
+            5,
+            -19,
+            TranspositionTable.EXACT,
+            12
+        );
+        long exact = table.probe(player, opponent);
+        if (!SearchEngine.etcBoundUsable(exact, 4)) {
+            throw new AssertionError("child exact boundをETCが拒否しました。");
+        }
+        assertEquals(
+            19,
+            SearchEngine.etcParentLowerBound(exact),
+            "ETC exact negation"
+        );
+    }
+
+    private static void testEnhancedTranspositionCutoffConsistency() {
+        PositionToMove sample = createMidgame(18);
+        SearchLimits limits = new SearchLimits(30_000L, 7, 1);
+        SearchEngine baseline = etcEngine(false);
+        SearchEngine candidate = etcEngine(true);
+        SearchResult expected = baseline.search(
+            sample.position,
+            sample.color,
+            limits
+        );
+        SearchResult actual = candidate.search(
+            sample.position,
+            sample.color,
+            limits
+        );
+        assertEquals(expected.score(), actual.score(), "ETC score");
+        assertEquals(
+            expected.bestSquare(),
+            actual.bestSquare(),
+            "ETC best square"
+        );
+        if (expected.etcProbes() != 0L || actual.etcProbes() == 0L) {
+            throw new AssertionError("ETC probe counterが不正です。");
+        }
+    }
+
+    private static SearchEngine etcEngine(boolean enabled) {
+        return new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 16),
+            true,
+            0,
+            true,
+            true,
+            enabled
+        );
     }
 
     private static void testSpecializedLeafSearch() {

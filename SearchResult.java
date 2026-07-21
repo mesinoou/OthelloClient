@@ -12,6 +12,9 @@ public final class SearchResult {
     private final long pvsResearches;
     private final long lmrSearches;
     private final long lmrResearches;
+    private final long etcProbes;
+    private final long etcHits;
+    private final long etcCutoffs;
     private final long parallelNodes;
     private final int parallelTasks;
     private final long[] parallelWorkerNodes;
@@ -235,6 +238,58 @@ public final class SearchResult {
         int endgameEmpties,
         long[] parallelWorkerNodes
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            lmrSearches,
+            lmrResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes,
+            0L,
+            0L,
+            0L
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes,
+        long etcProbes,
+        long etcHits,
+        long etcCutoffs
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -245,6 +300,9 @@ public final class SearchResult {
         this.pvsResearches = pvsResearches;
         this.lmrSearches = lmrSearches;
         this.lmrResearches = lmrResearches;
+        this.etcProbes = etcProbes;
+        this.etcHits = etcHits;
+        this.etcCutoffs = etcCutoffs;
         this.parallelNodes = parallelNodes;
         this.parallelTasks = parallelTasks;
         this.parallelWorkerNodes = parallelWorkerNodes == null
@@ -297,6 +355,18 @@ public final class SearchResult {
 
     public long lmrResearches() {
         return lmrResearches;
+    }
+
+    public long etcProbes() {
+        return etcProbes;
+    }
+
+    public long etcHits() {
+        return etcHits;
+    }
+
+    public long etcCutoffs() {
+        return etcCutoffs;
     }
 
     public long parallelNodes() {

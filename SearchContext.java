@@ -11,6 +11,9 @@ final class SearchContext {
     long pvsResearches;
     long lmrSearches;
     long lmrResearches;
+    long etcProbes;
+    long etcHits;
+    long etcCutoffs;
     int rootBestSquare;
     int rootScore;
     boolean timedOut;
@@ -22,6 +25,9 @@ final class SearchContext {
         pvsResearches = 0L;
         lmrSearches = 0L;
         lmrResearches = 0L;
+        etcProbes = 0L;
+        etcHits = 0L;
+        etcCutoffs = 0L;
         rootBestSquare = -1;
         rootScore = 0;
         timedOut = false;
