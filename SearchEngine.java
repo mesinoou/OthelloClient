@@ -748,44 +748,15 @@ public final class SearchEngine {
             }
         }
 
-        if (depth <= 4
-            && exactSearchActive
-            && exactLastNSolverEnabled) {
-            int exactEmpties = BitBoard.countEmpty(player, opponent);
-            if (exactLastNEligible(depth, exactEmpties)) {
-                long empty = ~(player | opponent);
-                if (depth == 4) {
-                    return solve4(
-                        player,
-                        opponent,
-                        empty,
-                        alpha,
-                        beta,
-                        false,
-                        searchContext
-                    );
-                }
-                if (depth == 3) {
-                    return solve3(
-                        player,
-                        opponent,
-                        empty,
-                        alpha,
-                        beta,
-                        false,
-                        searchContext
-                    );
-                }
-                return solve2(
-                    player,
-                    opponent,
-                    empty,
-                    alpha,
-                    beta,
-                    false,
-                    searchContext
-                );
-            }
+        if (depth <= 4 && exactSearchActive && exactLastNSolverEnabled) {
+            return solveExactLastN(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
         }
 
         long legalMoves = BitBoard.legalMoves(player, opponent);
@@ -984,6 +955,48 @@ public final class SearchEngine {
             );
         }
         return bestScore;
+    }
+
+    private int solveExactLastN(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        SearchContext searchContext
+    ) {
+        long empty = ~(player | opponent);
+        if (depth == 4) {
+            return solve4(
+                player,
+                opponent,
+                empty,
+                alpha,
+                beta,
+                false,
+                searchContext
+            );
+        }
+        if (depth == 3) {
+            return solve3(
+                player,
+                opponent,
+                empty,
+                alpha,
+                beta,
+                false,
+                searchContext
+            );
+        }
+        return solve2(
+            player,
+            opponent,
+            empty,
+            alpha,
+            beta,
+            false,
+            searchContext
+        );
     }
 
     private int solve4(
