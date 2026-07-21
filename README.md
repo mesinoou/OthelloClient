@@ -118,6 +118,8 @@ java -cp .build ParallelSearchBenchmark `
 
 既存の出力ファイルは誤上書きを防ぐため拒否される。試験的に置換する場合だけ`--overwrite`を指定する。全オプションは`java -cp .build ParallelSearchBenchmark --help`で確認できる。
 
+置換表などの`synchronized`モニタ競合を調べる場合は`--contention-metrics`を追加する。JVMが記録したワーカースレッドの待機回数と待機時間がCSVの`workerMonitorBlocks`、`workerMonitorBlockedMillis`へ出力される。このオプションは計測用であり、通常の対局では使用しない。
+
 終盤探索のみを測定する場合は次を用いる。
 
 ```powershell
