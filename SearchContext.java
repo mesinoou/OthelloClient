@@ -9,6 +9,8 @@ final class SearchContext {
     long transpositionHits;
     long betaCutoffs;
     long pvsResearches;
+    long lmrSearches;
+    long lmrResearches;
     int rootBestSquare;
     int rootScore;
     boolean timedOut;
@@ -18,6 +20,8 @@ final class SearchContext {
         transpositionHits = 0L;
         betaCutoffs = 0L;
         pvsResearches = 0L;
+        lmrSearches = 0L;
+        lmrResearches = 0L;
         rootBestSquare = -1;
         rootScore = 0;
         timedOut = false;

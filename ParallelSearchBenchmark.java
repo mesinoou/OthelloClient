@@ -171,6 +171,8 @@ public final class ParallelSearchBenchmark {
             "transpositionHits",
             "betaCutoffs",
             "pvsResearches",
+            "lmrSearches",
+            "lmrResearches",
             "timedOut",
             "consistent"
         );
@@ -434,6 +436,8 @@ public final class ParallelSearchBenchmark {
             Long.toString(result.transpositionHits()),
             Long.toString(result.betaCutoffs()),
             Long.toString(result.pvsResearches()),
+            Long.toString(result.lmrSearches()),
+            Long.toString(result.lmrResearches()),
             Boolean.toString(result.timedOut()),
             consistent
         );
