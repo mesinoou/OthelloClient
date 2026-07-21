@@ -115,25 +115,22 @@ public final class MpcCalibrationRunner {
                 if (!seen.add(key)) {
                     continue;
                 }
-                for (int depth : DEPTHS) {
-                    SearchResult shallow = engine.search(
-                        sample.position,
-                        sample.color,
-                        new SearchLimits(30_000L, depth - 2, 1)
-                    );
-                    SearchResult deep = engine.search(
+                int[] scores = new int[11];
+                for (int depth = 4; depth <= 10; depth += 2) {
+                    SearchResult result = engine.search(
                         sample.position,
                         sample.color,
                         new SearchLimits(30_000L, depth, 1)
                     );
-                    if (shallow.completedDepth() != depth - 2
-                        || deep.completedDepth() != depth
-                        || shallow.timedOut()
-                        || deep.timedOut()) {
+                    if (result.completedDepth() != depth
+                        || result.timedOut()) {
                         throw new IllegalStateException(
                             "calibration search did not complete"
                         );
                     }
+                    scores[depth] = result.score();
+                }
+                for (int depth : DEPTHS) {
                     output.write(String.format(
                         Locale.ROOT,
                         "%d,%d,%d,%d,%016x,%016x,%d,%d,%d,%d%n",
@@ -145,8 +142,8 @@ public final class MpcCalibrationRunner {
                         opponent,
                         depth,
                         depth - 2,
-                        shallow.score(),
-                        deep.score()
+                        scores[depth - 2],
+                        scores[depth]
                     ));
                 }
                 generated++;
