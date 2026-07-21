@@ -103,6 +103,16 @@ public final class SearchEngineTest {
                 );
             }
         }
+        PositionToMove threshold = createEndgame(
+            SearchEngine.MIN_ENDGAME_THRESHOLD
+        );
+        assertExactSearchMatches(
+            threshold.position,
+            threshold.color,
+            specialized,
+            generic,
+            "existing 12-empty endgame"
+        );
     }
 
     private static void testExactLastNSolverEdgeCases() {
