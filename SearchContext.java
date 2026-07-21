@@ -11,6 +11,8 @@ final class SearchContext {
     long pvsResearches;
     long lmrSearches;
     long lmrResearches;
+    long stabilityChecks;
+    long stabilityCuts;
     int rootBestSquare;
     int rootScore;
     boolean timedOut;
@@ -22,6 +24,8 @@ final class SearchContext {
         pvsResearches = 0L;
         lmrSearches = 0L;
         lmrResearches = 0L;
+        stabilityChecks = 0L;
+        stabilityCuts = 0L;
         rootBestSquare = -1;
         rootScore = 0;
         timedOut = false;
