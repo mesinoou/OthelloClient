@@ -15,6 +15,12 @@ public final class LearnedEvaluator implements PositionEvaluator {
 
     private static final int PHASE_COUNT = 4;
     private static final int TABLE_COUNT = 16;
+    private static final int LOCAL_PATTERN_TABLE_COUNT = 9;
+    private static final int BOARD_BYTE_COUNT = 8;
+    private static final int TERNARY_BYTE_STATES = 6561;
+    private static final int[] POWERS_OF_THREE = {
+        1, 3, 9, 27, 81, 243, 729, 2187, 6561, 19683
+    };
     private static final int DIAGONAL = 0;
     private static final int EDGE_2X = 1;
     private static final int CORNER = 2;
@@ -102,6 +108,9 @@ public final class LearnedEvaluator implements PositionEvaluator {
         {56, 57, 58, 48, 49, 50, 40, 41, 42},
         {56, 48, 40, 57, 49, 41, 58, 50, 42}
     };
+    private static final char[] BYTE_TERNARY_CODES = buildByteTernaryCodes();
+    private static final PatternIndexLookup[] PATTERN_INDEX_LOOKUPS =
+        buildPatternIndexLookups();
 
     private final int[] phaseStarts;
     private final PhaseTables[] phases;
@@ -111,6 +120,9 @@ public final class LearnedEvaluator implements PositionEvaluator {
     private final Path sourcePath;
     private final ThreadLocal<byte[]> patternStates = ThreadLocal.withInitial(
         () -> new byte[64]
+    );
+    private final ThreadLocal<int[]> patternChunkStates = ThreadLocal.withInitial(
+        () -> new int[BOARD_BYTE_COUNT]
     );
 
     private LearnedEvaluator(
@@ -272,54 +284,13 @@ public final class LearnedEvaluator implements PositionEvaluator {
         int empties = 64 - occupiedCount;
         PhaseTables phase = phases[phaseForPly(occupiedCount - 4)];
         short[][] tables = phase.tables;
-        byte[] states = patternStates.get();
-        fillPatternStates(states, player, opponent);
 
         int score = phase.bias;
-        score += patternScore(
-            tables[DIAGONAL],
-            states,
-            DIAGONAL_PATTERNS
-        );
-        score += patternScore(
-            tables[EDGE_2X],
-            states,
-            EDGE_2X_PATTERNS
-        );
-        score += patternScore(
-            tables[CORNER],
-            states,
-            CORNER_PATTERNS
-        );
-        score += patternScore(
-            tables[LINE_2],
-            states,
-            LINE_2_PATTERNS
-        );
-        score += patternScore(
-            tables[LINE_3],
-            states,
-            LINE_3_PATTERNS
-        );
-        score += patternScore(
-            tables[LINE_4],
-            states,
-            LINE_4_PATTERNS
-        );
-        score += patternScore(
-            tables[SHORT_DIAGONAL_7],
-            states,
-            SHORT_DIAGONAL_7_PATTERNS
-        );
-        score += patternScore(
-            tables[SHORT_DIAGONAL_6],
-            states,
-            SHORT_DIAGONAL_6_PATTERNS
-        );
-        score += patternScore(
-            tables[CORNER_3X3],
-            states,
-            CORNER_3X3_PATTERNS
+        score += chunkedPatternScore(
+            tables,
+            player,
+            opponent,
+            patternChunkStates.get()
         );
 
         long playerMoves = BitBoard.legalMoves(player, opponent);
@@ -400,6 +371,42 @@ public final class LearnedEvaluator implements PositionEvaluator {
         return index;
     }
 
+    static int ternaryByteCode(int playerByte, int opponentByte) {
+        if ((playerByte & ~0xff) != 0 || (opponentByte & ~0xff) != 0) {
+            throw new IllegalArgumentException("byte board is out of range");
+        }
+        return BYTE_TERNARY_CODES[playerByte | (opponentByte << 8)];
+    }
+
+    static long patternLookupDataBytes() {
+        long bytes = (long) BYTE_TERNARY_CODES.length * Character.BYTES;
+        for (PatternIndexLookup lookup : PATTERN_INDEX_LOOKUPS) {
+            bytes += lookup.dataBytes();
+        }
+        return bytes;
+    }
+
+    int chunkedPatternScore(long player, long opponent) {
+        PhaseTables phase = phases[phaseForPly(
+            Long.bitCount(player | opponent) - 4
+        )];
+        return chunkedPatternScore(
+            phase.tables,
+            player,
+            opponent,
+            patternChunkStates.get()
+        );
+    }
+
+    int referencePatternScore(long player, long opponent) {
+        PhaseTables phase = phases[phaseForPly(
+            Long.bitCount(player | opponent) - 4
+        )];
+        byte[] states = patternStates.get();
+        fillPatternStates(states, player, opponent);
+        return referencePatternScore(phase.tables, states);
+    }
+
     private int phaseForPly(int ply) {
         if (ply < phaseStarts[1]) {
             return 0;
@@ -427,6 +434,152 @@ public final class LearnedEvaluator implements PositionEvaluator {
             score += table[tableIndex];
         }
         return score;
+    }
+
+    private static int referencePatternScore(
+        short[][] tables,
+        byte[] states
+    ) {
+        return patternScore(tables[DIAGONAL], states, DIAGONAL_PATTERNS)
+            + patternScore(tables[EDGE_2X], states, EDGE_2X_PATTERNS)
+            + patternScore(tables[CORNER], states, CORNER_PATTERNS)
+            + patternScore(tables[LINE_2], states, LINE_2_PATTERNS)
+            + patternScore(tables[LINE_3], states, LINE_3_PATTERNS)
+            + patternScore(tables[LINE_4], states, LINE_4_PATTERNS)
+            + patternScore(
+                tables[SHORT_DIAGONAL_7],
+                states,
+                SHORT_DIAGONAL_7_PATTERNS
+            )
+            + patternScore(
+                tables[SHORT_DIAGONAL_6],
+                states,
+                SHORT_DIAGONAL_6_PATTERNS
+            )
+            + patternScore(
+                tables[CORNER_3X3],
+                states,
+                CORNER_3X3_PATTERNS
+            );
+    }
+
+    private static int chunkedPatternScore(
+        short[][] tables,
+        long player,
+        long opponent,
+        int[] chunkStates
+    ) {
+        for (int chunk = 0; chunk < BOARD_BYTE_COUNT; chunk++) {
+            int shift = chunk * Byte.SIZE;
+            int playerByte = (int) (player >>> shift) & 0xff;
+            int opponentByte = (int) (opponent >>> shift) & 0xff;
+            chunkStates[chunk] = BYTE_TERNARY_CODES[
+                playerByte | (opponentByte << 8)
+            ];
+        }
+
+        int score = 0;
+        for (PatternIndexLookup lookup : PATTERN_INDEX_LOOKUPS) {
+            score += tables[lookup.table][lookup.index(chunkStates)];
+        }
+        return score;
+    }
+
+    private static char[] buildByteTernaryCodes() {
+        char[] result = new char[1 << 16];
+        for (int key = 0; key < result.length; key++) {
+            int playerByte = key & 0xff;
+            int opponentByte = key >>> 8;
+            int code = 0;
+            for (int offset = 0; offset < Byte.SIZE; offset++) {
+                int mask = 1 << offset;
+                int state = (opponentByte & mask) != 0
+                    ? 2
+                    : (playerByte & mask) != 0 ? 1 : 0;
+                code += state * POWERS_OF_THREE[offset];
+            }
+            result[key] = (char) code;
+        }
+        return result;
+    }
+
+    private static PatternIndexLookup[] buildPatternIndexLookups() {
+        int count = 0;
+        for (int table = 0; table < LOCAL_PATTERN_TABLE_COUNT; table++) {
+            count += TABLE_INSTANCES[table];
+        }
+        PatternIndexLookup[] result = new PatternIndexLookup[count];
+        int offset = 0;
+        offset = appendPatternLookups(
+            result,
+            offset,
+            DIAGONAL,
+            DIAGONAL_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            EDGE_2X,
+            EDGE_2X_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            CORNER,
+            CORNER_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            LINE_2,
+            LINE_2_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            LINE_3,
+            LINE_3_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            LINE_4,
+            LINE_4_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            SHORT_DIAGONAL_7,
+            SHORT_DIAGONAL_7_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            SHORT_DIAGONAL_6,
+            SHORT_DIAGONAL_6_PATTERNS
+        );
+        offset = appendPatternLookups(
+            result,
+            offset,
+            CORNER_3X3,
+            CORNER_3X3_PATTERNS
+        );
+        if (offset != result.length) {
+            throw new AssertionError("pattern lookup count mismatch");
+        }
+        return result;
+    }
+
+    private static int appendPatternLookups(
+        PatternIndexLookup[] target,
+        int offset,
+        int table,
+        int[][] patterns
+    ) {
+        for (int[] pattern : patterns) {
+            target[offset++] = new PatternIndexLookup(table, pattern);
+        }
+        return offset;
     }
 
     private static void fillPatternStates(
@@ -493,6 +646,76 @@ public final class LearnedEvaluator implements PositionEvaluator {
         private PhaseTables(int bias, short[][] tables) {
             this.bias = bias;
             this.tables = tables;
+        }
+    }
+
+    private static final class PatternIndexLookup {
+
+        private final int table;
+        private final byte[] chunks;
+        private final char[][] contributions;
+
+        private PatternIndexLookup(int table, int[] pattern) {
+            this.table = table;
+            int[][] weights = new int[BOARD_BYTE_COUNT][Byte.SIZE];
+            boolean[] usedChunks = new boolean[BOARD_BYTE_COUNT];
+            int usedCount = 0;
+            for (int index = 0; index < pattern.length; index++) {
+                int square = pattern[index];
+                int chunk = square >>> 3;
+                int offset = square & 7;
+                weights[chunk][offset] = POWERS_OF_THREE[
+                    pattern.length - index - 1
+                ];
+                if (!usedChunks[chunk]) {
+                    usedChunks[chunk] = true;
+                    usedCount++;
+                }
+            }
+
+            chunks = new byte[usedCount];
+            contributions = new char[usedCount][];
+            int target = 0;
+            for (int chunk = 0; chunk < BOARD_BYTE_COUNT; chunk++) {
+                if (!usedChunks[chunk]) {
+                    continue;
+                }
+                chunks[target] = (byte) chunk;
+                contributions[target] = buildContributions(weights[chunk]);
+                target++;
+            }
+        }
+
+        private int index(int[] chunkStates) {
+            int index = 0;
+            for (int i = 0; i < chunks.length; i++) {
+                int chunk = Byte.toUnsignedInt(chunks[i]);
+                index += contributions[i][chunkStates[chunk]];
+            }
+            return index;
+        }
+
+        private long dataBytes() {
+            long bytes = chunks.length;
+            for (char[] contribution : contributions) {
+                bytes += (long) contribution.length * Character.BYTES;
+            }
+            return bytes;
+        }
+
+        private static char[] buildContributions(int[] weights) {
+            char[] result = new char[TERNARY_BYTE_STATES];
+            for (int code = 0; code < result.length; code++) {
+                int remaining = code;
+                int contribution = 0;
+                for (int offset = 0; offset < Byte.SIZE; offset++) {
+                    int state = remaining % 3;
+                    remaining /= 3;
+                    contribution += state * weights[offset];
+                }
+                result[code] = (char) contribution;
+            }
+            return result;
         }
     }
 }
