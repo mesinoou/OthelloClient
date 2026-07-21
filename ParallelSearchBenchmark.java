@@ -176,6 +176,10 @@ public final class ParallelSearchBenchmark {
             "pvsResearches",
             "lmrSearches",
             "lmrResearches",
+            "mpcAttempts",
+            "mpcHighCuts",
+            "mpcLowCuts",
+            "mpcProbeNodes",
             "timedOut",
             "consistent"
         );
@@ -449,6 +453,10 @@ public final class ParallelSearchBenchmark {
             Long.toString(result.pvsResearches()),
             Long.toString(result.lmrSearches()),
             Long.toString(result.lmrResearches()),
+            Long.toString(result.mpcAttempts()),
+            Long.toString(result.mpcHighCuts()),
+            Long.toString(result.mpcLowCuts()),
+            Long.toString(result.mpcProbeNodes()),
             Boolean.toString(result.timedOut()),
             consistent
         );

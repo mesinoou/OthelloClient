@@ -14,6 +14,10 @@ public final class SearchResult {
     private final long lmrResearches;
     private final long stabilityChecks;
     private final long stabilityCuts;
+    private final long mpcAttempts;
+    private final long mpcHighCuts;
+    private final long mpcLowCuts;
+    private final long mpcProbeNodes;
     private final long parallelNodes;
     private final int parallelTasks;
     private final long[] parallelWorkerNodes;
@@ -287,6 +291,64 @@ public final class SearchResult {
         long stabilityChecks,
         long stabilityCuts
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            lmrSearches,
+            lmrResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes,
+            stabilityChecks,
+            stabilityCuts,
+            0L,
+            0L,
+            0L,
+            0L
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes,
+        long stabilityChecks,
+        long stabilityCuts,
+        long mpcAttempts,
+        long mpcHighCuts,
+        long mpcLowCuts,
+        long mpcProbeNodes
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -299,6 +361,10 @@ public final class SearchResult {
         this.lmrResearches = lmrResearches;
         this.stabilityChecks = stabilityChecks;
         this.stabilityCuts = stabilityCuts;
+        this.mpcAttempts = mpcAttempts;
+        this.mpcHighCuts = mpcHighCuts;
+        this.mpcLowCuts = mpcLowCuts;
+        this.mpcProbeNodes = mpcProbeNodes;
         this.parallelNodes = parallelNodes;
         this.parallelTasks = parallelTasks;
         this.parallelWorkerNodes = parallelWorkerNodes == null
@@ -359,6 +425,22 @@ public final class SearchResult {
 
     public long stabilityCuts() {
         return stabilityCuts;
+    }
+
+    public long mpcAttempts() {
+        return mpcAttempts;
+    }
+
+    public long mpcHighCuts() {
+        return mpcHighCuts;
+    }
+
+    public long mpcLowCuts() {
+        return mpcLowCuts;
+    }
+
+    public long mpcProbeNodes() {
+        return mpcProbeNodes;
     }
 
     public long parallelNodes() {

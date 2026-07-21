@@ -30,6 +30,7 @@ public final class SearchEngine {
     private static final int MAX_EDGE_STABLE_DISCS = 28;
     private static final int ODD_REGION_BONUS = 1;
     private static final int NO_STABILITY_CUTOFF = Integer.MIN_VALUE;
+    private static final int NO_MPC_CUTOFF = Integer.MIN_VALUE;
     private static final int MAX_EDGE_LOWER_SCORE =
         Evaluator.terminalScoreForDifference(
             2 * MAX_EDGE_STABLE_DISCS - 64
@@ -47,6 +48,7 @@ public final class SearchEngine {
     private final boolean lmrEnabled;
     private final boolean exactLastNSolverEnabled;
     private final boolean stabilityCutoffEnabled;
+    private final boolean multiProbCutEnabled;
     private final SearchContext context = new SearchContext();
     private final ThreadLocal<SearchContext> workerContexts =
         ThreadLocal.withInitial(SearchContext::new);
@@ -140,6 +142,28 @@ public final class SearchEngine {
         boolean exactLastNSolverEnabled,
         boolean stabilityCutoffEnabled
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            stabilityCutoffEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean stabilityCutoffEnabled,
+        boolean multiProbCutEnabled
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
@@ -154,6 +178,8 @@ public final class SearchEngine {
         this.lmrEnabled = lmrEnabled;
         this.exactLastNSolverEnabled = exactLastNSolverEnabled;
         this.stabilityCutoffEnabled = stabilityCutoffEnabled;
+        this.multiProbCutEnabled = multiProbCutEnabled
+            && MultiProbCut.supports(evaluator);
     }
 
     public String evaluatorDescription() {
@@ -392,7 +418,11 @@ public final class SearchEngine {
             parallelMetrics.workerNodesSnapshot(),
             context.stabilityChecks
                 + parallelMetrics.stabilityChecks.get(),
-            context.stabilityCuts + parallelMetrics.stabilityCuts.get()
+            context.stabilityCuts + parallelMetrics.stabilityCuts.get(),
+            context.mpcAttempts + parallelMetrics.mpcAttempts.get(),
+            context.mpcHighCuts + parallelMetrics.mpcHighCuts.get(),
+            context.mpcLowCuts + parallelMetrics.mpcLowCuts.get(),
+            context.mpcProbeNodes + parallelMetrics.mpcProbeNodes.get()
         );
     }
 
@@ -899,6 +929,21 @@ public final class SearchEngine {
             return value;
         }
 
+        int mpcScore = multiProbCut(
+            player,
+            opponent,
+            depth,
+            empties,
+            alpha,
+            beta,
+            nullWindow,
+            ply,
+            searchContext
+        );
+        if (mpcScore != NO_MPC_CUTOFF) {
+            return mpcScore;
+        }
+
         if (empties == 1) {
             long move = legalMoves & -legalMoves;
             long flips = BitBoard.flips(player, opponent, move);
@@ -1045,6 +1090,78 @@ public final class SearchEngine {
             );
         }
         return bestScore;
+    }
+
+    private int multiProbCut(
+        long player,
+        long opponent,
+        int depth,
+        int empties,
+        int alpha,
+        int beta,
+        boolean nullWindow,
+        int ply,
+        SearchContext searchContext
+    ) {
+        if (!multiProbCutEnabled
+            || searchContext.mpcProbeActive
+            || !nullWindow) {
+            return NO_MPC_CUTOFF;
+        }
+        MultiProbCut.Parameters parameters = MultiProbCut.parametersFor(
+            depth,
+            empties
+        );
+        if (parameters == null) {
+            return NO_MPC_CUTOFF;
+        }
+
+        searchContext.mpcAttempts++;
+        long nodesBefore = searchContext.nodes;
+        searchContext.mpcProbeActive = true;
+        try {
+            if (evaluator.evaluate(player, opponent) >= beta) {
+                int highThreshold = MultiProbCut.failHighThreshold(
+                    beta,
+                    parameters
+                );
+                int highScore = pvs(
+                    player,
+                    opponent,
+                    depth - 4,
+                    highThreshold - 1,
+                    highThreshold,
+                    ply,
+                    searchContext
+                );
+                if (highScore >= highThreshold) {
+                    searchContext.mpcHighCuts++;
+                    return beta;
+                }
+            } else {
+                int lowThreshold = MultiProbCut.failLowThreshold(
+                    alpha,
+                    parameters
+                );
+                int lowScore = pvs(
+                    player,
+                    opponent,
+                    depth - 4,
+                    lowThreshold,
+                    lowThreshold + 1,
+                    ply,
+                    searchContext
+                );
+                if (lowScore <= lowThreshold) {
+                    searchContext.mpcLowCuts++;
+                    return alpha;
+                }
+            }
+            return NO_MPC_CUTOFF;
+        } finally {
+            searchContext.mpcProbeActive = false;
+            searchContext.mpcProbeNodes += searchContext.nodes - nodesBefore;
+        }
     }
 
     private int stabilityCutoff(
@@ -1828,6 +1945,10 @@ public final class SearchEngine {
         private final AtomicLong lmrResearches = new AtomicLong();
         private final AtomicLong stabilityChecks = new AtomicLong();
         private final AtomicLong stabilityCuts = new AtomicLong();
+        private final AtomicLong mpcAttempts = new AtomicLong();
+        private final AtomicLong mpcHighCuts = new AtomicLong();
+        private final AtomicLong mpcLowCuts = new AtomicLong();
+        private final AtomicLong mpcProbeNodes = new AtomicLong();
         private final AtomicInteger tasks = new AtomicInteger();
         private final ConcurrentHashMap<String, AtomicLong> workerNodes =
             new ConcurrentHashMap<>();
@@ -1841,6 +1962,10 @@ public final class SearchEngine {
             lmrResearches.set(0L);
             stabilityChecks.set(0L);
             stabilityCuts.set(0L);
+            mpcAttempts.set(0L);
+            mpcHighCuts.set(0L);
+            mpcLowCuts.set(0L);
+            mpcProbeNodes.set(0L);
             tasks.set(0);
             workerNodes.clear();
         }
@@ -1854,6 +1979,10 @@ public final class SearchEngine {
             lmrResearches.addAndGet(searchContext.lmrResearches);
             stabilityChecks.addAndGet(searchContext.stabilityChecks);
             stabilityCuts.addAndGet(searchContext.stabilityCuts);
+            mpcAttempts.addAndGet(searchContext.mpcAttempts);
+            mpcHighCuts.addAndGet(searchContext.mpcHighCuts);
+            mpcLowCuts.addAndGet(searchContext.mpcLowCuts);
+            mpcProbeNodes.addAndGet(searchContext.mpcProbeNodes);
             tasks.incrementAndGet();
             workerNodes.computeIfAbsent(
                 Thread.currentThread().getName(),

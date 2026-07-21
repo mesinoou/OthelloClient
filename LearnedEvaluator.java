@@ -4,6 +4,8 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.zip.CRC32;
 
@@ -109,6 +111,7 @@ public final class LearnedEvaluator implements PositionEvaluator {
     private final int scoreDivisor;
     private final int maximumAbsoluteScoreBound;
     private final Path sourcePath;
+    private final String modelSha256;
     private final ThreadLocal<byte[]> patternStates = ThreadLocal.withInitial(
         () -> new byte[64]
     );
@@ -119,7 +122,8 @@ public final class LearnedEvaluator implements PositionEvaluator {
         int scoreScale,
         int scoreDivisor,
         int maximumAbsoluteScoreBound,
-        Path sourcePath
+        Path sourcePath,
+        String modelSha256
     ) {
         this.phaseStarts = phaseStarts;
         this.phases = phases;
@@ -127,6 +131,7 @@ public final class LearnedEvaluator implements PositionEvaluator {
         this.scoreDivisor = scoreDivisor;
         this.maximumAbsoluteScoreBound = maximumAbsoluteScoreBound;
         this.sourcePath = sourcePath;
+        this.modelSha256 = modelSha256;
     }
 
     public static PositionEvaluator loadDefault() {
@@ -261,7 +266,8 @@ public final class LearnedEvaluator implements PositionEvaluator {
             scoreScale,
             scoreDivisor,
             maximumBound,
-            path.toAbsolutePath().normalize()
+            path.toAbsolutePath().normalize(),
+            sha256(data)
         );
     }
 
@@ -376,6 +382,23 @@ public final class LearnedEvaluator implements PositionEvaluator {
             + ", divisor=" + scoreDivisor
             + ", bound=" + maximumAbsoluteScoreBound
             + ", path=" + sourcePath + ")";
+    }
+
+    String modelSha256() {
+        return modelSha256;
+    }
+
+    private static String sha256(byte[] data) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(data);
+            StringBuilder result = new StringBuilder(digest.length * 2);
+            for (byte value : digest) {
+                result.append(String.format("%02X", value & 0xff));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException error) {
+            throw new AssertionError("SHA-256 is unavailable", error);
+        }
     }
 
     static int encodePattern(
