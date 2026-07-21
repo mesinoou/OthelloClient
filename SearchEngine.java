@@ -399,6 +399,7 @@ public final class SearchEngine {
         int beta = INFINITY;
         int bestScore = -INFINITY;
         int bestSquare = -1;
+        int firstMoveScore = -INFINITY;
 
         for (int index = 0; index < moveCount; index++) {
             checkStop(true, context);
@@ -418,24 +419,26 @@ public final class SearchEngine {
                     1,
                     context
                 );
+                firstMoveScore = score;
             } else {
+                int probeAlpha = lmrEnabled ? firstMoveScore : alpha;
                 score = -pvs(
                     nextOpponent,
                     nextPlayer,
                     depth - 1,
-                    -alpha - 1,
-                    -alpha,
+                    -probeAlpha - 1,
+                    -probeAlpha,
                     1,
                     context
                 );
-                if (score > alpha && score < beta) {
+                if (score > probeAlpha && score < beta) {
                     context.pvsResearches++;
                     score = -pvs(
                         nextOpponent,
                         nextPlayer,
                         depth - 1,
                         -beta,
-                        -alpha,
+                        -probeAlpha,
                         1,
                         context
                     );
