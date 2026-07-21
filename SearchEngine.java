@@ -25,6 +25,8 @@ public final class SearchEngine {
     private static final int ENDGAME_FALLBACK_DEPTH = 4;
     private static final int ODD_REGION_BONUS = 1;
     private static final long CORNERS = 0x8100000000000081L;
+    private static final int PRIMARY_KILLER_BONUS = 256;
+    private static final int SECONDARY_KILLER_BONUS = 128;
 
     private final PositionEvaluator evaluator;
     private final TranspositionTable table;
@@ -807,6 +809,10 @@ public final class SearchEngine {
             }
             if (alpha >= beta) {
                 searchContext.betaCutoffs++;
+                searchContext.recordKiller(
+                    ply,
+                    Long.numberOfTrailingZeros(move)
+                );
                 break;
             }
         }
@@ -853,6 +859,11 @@ public final class SearchEngine {
             int opponentMobility = BitBoard.count(opponentMoves);
 
             int priority = -100 * opponentMobility + BitBoard.count(flips);
+            if (square == searchContext.killerSquares[ply][0]) {
+                priority += PRIMARY_KILLER_BONUS;
+            } else if (square == searchContext.killerSquares[ply][1]) {
+                priority += SECONDARY_KILLER_BONUS;
+            }
             if (endgameOrdering) {
                 if ((move & oddRegions) != 0L) {
                     priority += ODD_REGION_BONUS;

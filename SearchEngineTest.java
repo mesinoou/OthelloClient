@@ -12,6 +12,7 @@ public final class SearchEngineTest {
         testEndgameThresholdSelection();
         testTranspositionTableConsistency();
         testRootProbeResearchDecision();
+        testKillerMoveTracking();
         testParallelMatchesSequential();
         testExactEndgame();
         testExactEndgameAtThreshold();
@@ -166,6 +167,24 @@ public final class SearchEngineTest {
                 "fail-highしていない手が再探索されます。"
             );
         }
+    }
+
+    private static void testKillerMoveTracking() {
+        SearchContext context = new SearchContext();
+        context.reset();
+
+        context.recordKiller(5, 12);
+        context.recordKiller(5, 20);
+        assertEquals(20, context.killerSquares[5][0], "primary killer");
+        assertEquals(12, context.killerSquares[5][1], "secondary killer");
+
+        context.recordKiller(5, 20);
+        assertEquals(20, context.killerSquares[5][0], "duplicate killer");
+        assertEquals(12, context.killerSquares[5][1], "duplicate secondary");
+
+        context.reset();
+        assertEquals(-1, context.killerSquares[5][0], "reset primary killer");
+        assertEquals(-1, context.killerSquares[5][1], "reset secondary killer");
     }
 
     private static void testExactEndgame() {
