@@ -45,7 +45,7 @@
 | SEARCH-011 | accepted | `baseline/exact-last-n-20260721` | `codex/stability-cutoff` | edge stable discsによる終盤window縮小 | `benchmark/results/search-011-stability-cutoff-2026-07-21.md` | 12〜18空き4T平均時間-8.35%、checksum一致、通常不一致0/352 | `baseline/stability-cutoff-20260721`として統合 |
 | RUNTIME-001 | planned | latest accepted | `codex/runtime-auto-sizing` | 接続前診断でthreadsとTT容量を自動選択 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | 正確な探索高速化後 |
 | CLIENT-001 | planned | latest accepted | `codex/opponent-turn-pondering` | 相手手番探索で共有TTを予熱 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | RUNTIME-001後 |
-| SEARCH-012 | planned | latest accepted | `codex/adaptive-lmr` | 深さ・手順・相手可動数に応じてLMRを2 ply化 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-011後 |
+| SEARCH-012 | rejected | `e5b1304` | `codex/adaptive-lmr` | 深さ・手順・相手可動数に応じてLMRを2 ply化 | `benchmark/results/search-012-adaptive-lmr-2026-07-21.md` | 深さ10 4T node -5.80%、Standard -0.08%、500 ms深さ同値 | 性能gate未達のため実験ブランチへ保存 |
 | SEARCH-013 | planned | latest accepted | `codex/multi-probcut` | holdout校正したMulti-ProbCut | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-012後 |
 | SEARCH-014 | planned | latest accepted | `codex/interior-ybwc` | 浅いplyのYBWC split pointを追加 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-013後 |
 | SEARCH-015 | planned | latest accepted | `codex/lazy-smp-helper` | 時間制限探索へ1本の決定的TT helperを追加 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-014採用後 |
