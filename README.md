@@ -102,6 +102,22 @@ java -cp .build EvaluationBenchmark `
   .training/models/pattern-evaluation-v2/evaluation-tables.bin 3000000
 ```
 
+同一局面に対する1、2、4、8スレッド探索を比較する場合は、並列探索ベンチマークを実行する。固定深さでは逐次探索と指し手・評価値が一致しないと失敗し、固定時間では到達深さとスループットを測定する。CSVにはコミットのdirty状態、モデルと局面集合のSHA-256、実行環境、ワーカー別ノード数を記録する。
+
+```powershell
+java -cp .build ParallelSearchBenchmark `
+  --model data/evaluation-tables.bin `
+  --mode all `
+  --threads 1,2,4,8 `
+  --positions 8 `
+  --depth 9 `
+  --time-ms 500 `
+  --repetitions 2 `
+  --output benchmark/results/parallel-search-v1-20260721.csv
+```
+
+既存の出力ファイルは誤上書きを防ぐため拒否される。試験的に置換する場合だけ`--overwrite`を指定する。全オプションは`java -cp .build ParallelSearchBenchmark --help`で確認できる。
+
 終盤探索のみを測定する場合は次を用いる。
 
 ```powershell
@@ -128,8 +144,11 @@ python -m training.train_model
 ## バージョン管理
 
 - `main`: 対局と回帰テストが完了した基準版
-- 作業ブランチ: 改良ごとに `feature/<内容>` または `experiment/<内容>` を作成
+- ベースライン: 評価済みコミットに`baseline/<名称>-<日付>`形式の注釈付きタグを付与
+- 作業ブランチ: 改良仮説ごとに`codex/<実験名>`を作成し、不採用実験から次の実験を分岐しない
 - 公開版: `VERSION`、`CHANGELOG.md`を更新し、`vX.Y.Z`形式の注釈付きタグを付与
-- 比較実験: 対戦条件、乱数・定石条件、勝敗をコミットまたはIssueへ記録
+- 比較実験: `benchmark/EXPERIMENTS.md`へ基準コミット、変更、測定条件、結果、採否を記録
+- コミット: 計測基盤、アルゴリズム変更、評価結果を分離し、採用が決まるまで共有履歴をforce pushしない
+- ローカルモデル: バイナリは追跡せず、モデルSHA-256と生成条件を評価結果へ記録
 
 初回ベースラインは `v0.1.0` である。
