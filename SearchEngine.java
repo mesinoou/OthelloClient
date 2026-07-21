@@ -894,7 +894,7 @@ public final class SearchEngine {
 
         if (enhancedTranspositionCutoffEnabled
             && table != null
-            && etcEligible(depth)) {
+            && etcEligible(depth, nullWindow)) {
             int etcScore = enhancedTranspositionCutoff(
                 player,
                 opponent,
@@ -1432,8 +1432,8 @@ public final class SearchEngine {
         return depth >= MINIMUM_TT_DEPTH;
     }
 
-    static boolean etcEligible(int depth) {
-        return depth >= ETC_MINIMUM_DEPTH;
+    static boolean etcEligible(int depth, boolean nullWindow) {
+        return nullWindow && depth >= ETC_MINIMUM_DEPTH;
     }
 
     static boolean etcBoundUsable(long probe, int requiredDepth) {

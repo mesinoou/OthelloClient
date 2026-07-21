@@ -255,7 +255,9 @@ public final class SearchEngineTest {
     }
 
     private static void testEnhancedTranspositionCutoffBounds() {
-        if (SearchEngine.etcEligible(4) || !SearchEngine.etcEligible(5)) {
+        if (SearchEngine.etcEligible(4, true)
+            || SearchEngine.etcEligible(5, false)
+            || !SearchEngine.etcEligible(5, true)) {
             throw new AssertionError("ETCのdepth境界が不正です。");
         }
 
