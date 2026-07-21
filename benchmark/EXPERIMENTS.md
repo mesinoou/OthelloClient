@@ -20,12 +20,14 @@
 - `running`: 実装または測定中
 - `accepted`: 基準版への統合対象
 - `rejected`: 結果を保存して統合しない
+- `measurement`: 実装を変更せず、固定した基準版の性能を再測定
 
 ## Experiments
 
 | ID | Status | Base | Branch | Single change | Validation / benchmark | Result | Decision |
 |---|---|---|---|---|---|---|---|
 | BASE-20260721 | frozen | `50313ca` | `feature/learned-evaluation` | CUDA e80学習評価を含む現行基準 | `benchmark/results/learned-e80-2026-07-21.md` | Edax L7 100局で50-1-49 | `baseline/learned-e80-20260721`として固定 |
+| BENCH-002 | measurement | `baseline/stability-cutoff-20260721` | `codex/algorithm-roadmap-v1` | 現在版の対Edax強度をL6/L7/L8各100局で再測定 | `benchmark/results/current-strength-2026-07-21.md` | L6 64.0%、L7 53.0%、L8 37.0%、大会条件2局完走 | 現在の強さをEdax L7付近と判定 |
 | BENCH-001 | infrastructure | `baseline/learned-e80-20260721` | `codex/parallel-benchmark-v1` | 並列探索の再現可能な固定深さ・固定時間計測を追加 | `benchmark/results/parallel-search-v1-2026-07-21.md` | 固定深さ128結果で不一致0件、4T 1.68倍、8T 1.89倍 | 計測基盤として採用、探索動作は変更なし |
 | SEARCH-001 | rejected | `benchmark/parallel-v1-20260721` | `codex/root-parallel-worker-loop` | 指し手単位Futureを固定ワーカーループへ変更し、メインスレッドも参加 | `benchmark/results/search-001-root-worker-loop-2026-07-21.md` | 2Tは26.7%短縮、4Tは2.0%短縮、8Tは10.8%悪化 | 大会用4Tの改善が小さく8T退行のため不採用 |
 | FIX-001 | accepted | `benchmark/parallel-v1-20260721` | `codex/root-parallel-research-fix` | 並行中の共有alpha更新後もfail-high手を再探索する | `benchmark/results/fix-001-parallel-research-2026-07-21.md` | 固定深さ448結果で不一致0件、4Tノード約4.9%増 | 正当性修正として採用 |
