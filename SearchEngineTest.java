@@ -11,6 +11,7 @@ public final class SearchEngineTest {
         testAgainstReferenceNegamax();
         testEndgameThresholdSelection();
         testTranspositionTableConsistency();
+        testRootProbeResearchDecision();
         testParallelMatchesSequential();
         testExactEndgame();
         testExactEndgameAtThreshold();
@@ -151,6 +152,19 @@ public final class SearchEngineTest {
             }
             sequentialEngine.shutdown();
             parallelEngine.shutdown();
+        }
+    }
+
+    private static void testRootProbeResearchDecision() {
+        if (!SearchEngine.rootProbeFailedHigh(100, 101)) {
+            throw new AssertionError(
+                "探索に使用したalphaを超えた手が再探索されません。"
+            );
+        }
+        if (SearchEngine.rootProbeFailedHigh(100, 100)) {
+            throw new AssertionError(
+                "fail-highしていない手が再探索されます。"
+            );
         }
     }
 
