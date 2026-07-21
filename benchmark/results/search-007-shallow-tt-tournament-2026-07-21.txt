@@ -1,0 +1,11 @@
+evaluation match
+model=learned-table-v1 (scoreScale=6400, divisor=1, bound=75962, path=data/evaluation-tables.bin)
+opponent=EDAX, edaxLevel=7
+pairs=1, games=2, openingPlies=8, openingSeed=20260721
+searchTimeMillis=10000, maxDepth=64, threads=4, openingBook=off
+game=1/2 opening=1 learned=black result=WIN margin=+2 discs=33-31 moves=60 elapsed=171.665s
+game=2/2 opening=1 learned=white result=WIN margin=+12 discs=26-38 moves=60 elapsed=162.327s
+summary
+games=2 wins=2 draws=0 losses=0 scoreRate=100.00% averageMargin=+7.00 elapsed=333.992s
+learned: moves=52 avgMove=6419.906ms avgDepth=12.46 nodes=409069415 nodesPerSecond=1225364 budgetStops=33 exactMoves=19
+edax: moves=52 avgMove=2.592ms
