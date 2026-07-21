@@ -519,6 +519,7 @@ public final class SearchEngine {
                         move,
                         moveIndex,
                         depth,
+                        firstScore,
                         sharedBest,
                         completion
                     )
@@ -561,6 +562,7 @@ public final class SearchEngine {
         long move,
         int moveIndex,
         int depth,
+        int probeAlpha,
         AtomicLong sharedBest,
         WorkerCompletion completion
     ) {
@@ -572,26 +574,24 @@ public final class SearchEngine {
         boolean aborted = false;
         try {
             checkStop(true, workerContext);
-            int alpha = unpackBestScore(sharedBest.get());
             int score = searchRootMove(
                 player,
                 opponent,
                 move,
                 depth,
-                alpha,
-                alpha + 1,
+                probeAlpha,
+                probeAlpha + 1,
                 workerContext
             );
 
-            if (rootProbeFailedHigh(alpha, score)) {
+            if (rootProbeFailedHigh(probeAlpha, score)) {
                 workerContext.pvsResearches++;
-                int currentAlpha = unpackBestScore(sharedBest.get());
                 score = searchRootMove(
                     player,
                     opponent,
                     move,
                     depth,
-                    currentAlpha,
+                    probeAlpha,
                     INFINITY,
                     workerContext
                 );
@@ -769,17 +769,24 @@ public final class SearchEngine {
             return score;
         }
 
+        int orderingTableBestSquare = lmrEnabled
+            && nullWindow
+            && depth >= LMR_MINIMUM_DEPTH
+            && empties > MAX_ENDGAME_THRESHOLD
+                ? -1
+                : tableBestSquare;
         int moveCount = prepareMoves(
             player,
             opponent,
             legalMoves,
             ply,
             -1,
-            tableBestSquare,
+            orderingTableBestSquare,
             searchContext
         );
         int bestScore = -INFINITY;
         int bestSquare = -1;
+        boolean hasUnverifiedReduction = false;
 
         for (int index = 0; index < moveCount; index++) {
             long move = searchContext.moves[ply][index];
@@ -830,6 +837,8 @@ public final class SearchEngine {
                             ply + 1,
                             searchContext
                         );
+                    } else {
+                        hasUnverifiedReduction = true;
                     }
                 } else {
                     score = -pvs(
@@ -869,16 +878,30 @@ public final class SearchEngine {
             }
         }
 
-        storeBound(
-            player,
-            opponent,
-            depth,
+        if (lmrBoundCanBeStored(
+            hasUnverifiedReduction,
             bestScore,
-            originalAlpha,
-            originalBeta,
-            bestSquare
-        );
+            originalBeta
+        )) {
+            storeBound(
+                player,
+                opponent,
+                depth,
+                bestScore,
+                originalAlpha,
+                originalBeta,
+                bestSquare
+            );
+        }
         return bestScore;
+    }
+
+    static boolean lmrBoundCanBeStored(
+        boolean hasUnverifiedReduction,
+        int bestScore,
+        int originalBeta
+    ) {
+        return !hasUnverifiedReduction || bestScore >= originalBeta;
     }
 
     static boolean lmrEligible(

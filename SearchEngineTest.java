@@ -193,6 +193,15 @@ public final class SearchEngineTest {
         if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, false, true)) {
             throw new AssertionError("PVノードでLMRを適用しています。");
         }
+        if (SearchEngine.lmrBoundCanBeStored(true, 99, 100)) {
+            throw new AssertionError("未検証LMRのUPPER boundを保存しています。");
+        }
+        if (!SearchEngine.lmrBoundCanBeStored(true, 100, 100)) {
+            throw new AssertionError("LMRのLOWER boundを破棄しています。");
+        }
+        if (!SearchEngine.lmrBoundCanBeStored(false, 99, 100)) {
+            throw new AssertionError("全深度確認済みのboundを破棄しています。");
+        }
     }
 
     private static void testLateMoveReductionActivation() {
