@@ -22,6 +22,8 @@ public final class SearchEngine {
     private static final int INFINITY = 1_000_000;
     private static final int STOP_CHECK_MASK = 1023;
     private static final int PARALLEL_MINIMUM_DEPTH = 3;
+    private static final int ASPIRATION_MINIMUM_DEPTH = 4;
+    private static final int ASPIRATION_WINDOW = 512;
     private static final int ENDGAME_FALLBACK_DEPTH = 4;
     private static final int ODD_REGION_BONUS = 1;
     private static final long CORNERS = 0x8100000000000081L;
@@ -30,6 +32,7 @@ public final class SearchEngine {
     private final TranspositionTable table;
     private final boolean endgameOrderingEnabled;
     private final int endgameThresholdOverride;
+    private final boolean aspirationEnabled;
     private final SearchContext context = new SearchContext();
     private final ThreadLocal<SearchContext> workerContexts =
         ThreadLocal.withInitial(SearchContext::new);
@@ -68,6 +71,22 @@ public final class SearchEngine {
         boolean endgameOrderingEnabled,
         int endgameThresholdOverride
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean aspirationEnabled
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
@@ -79,6 +98,7 @@ public final class SearchEngine {
             throw new IllegalArgumentException("invalid endgame threshold");
         }
         this.endgameThresholdOverride = endgameThresholdOverride;
+        this.aspirationEnabled = aspirationEnabled;
     }
 
     public String evaluatorDescription() {
@@ -191,27 +211,17 @@ public final class SearchEngine {
                 ? Math.min(ENDGAME_FALLBACK_DEPTH, emptyCount - 1)
                 : maximumDepth;
             for (int depth = 1; depth <= iterativeDepth; depth++) {
-                if (rootPass) {
-                    searchPassedRoot(player, opponent, depth);
-                } else if (shouldSearchParallel(
+                searchIteration(
+                    player,
+                    opponent,
                     legalMoves,
+                    rootPass,
                     depth,
-                    limits.threads()
-                )) {
-                    searchRootParallel(
-                        player,
-                        opponent,
-                        depth,
-                        bestSquare
-                    );
-                } else {
-                    searchRoot(
-                        player,
-                        opponent,
-                        depth,
-                        bestSquare
-                    );
-                }
+                    bestSquare,
+                    bestScore,
+                    limits.threads(),
+                    aspirationEnabled && depth < emptyCount
+                );
                 bestSquare = context.rootBestSquare;
                 bestScore = context.rootScore;
                 completedDepth = depth;
@@ -219,27 +229,17 @@ public final class SearchEngine {
             }
 
             if (endgameSearch) {
-                if (rootPass) {
-                    searchPassedRoot(player, opponent, emptyCount);
-                } else if (shouldSearchParallel(
+                searchRootWindow(
+                    player,
+                    opponent,
                     legalMoves,
+                    rootPass,
                     emptyCount,
-                    limits.threads()
-                )) {
-                    searchRootParallel(
-                        player,
-                        opponent,
-                        emptyCount,
-                        bestSquare
-                    );
-                } else {
-                    searchRoot(
-                        player,
-                        opponent,
-                        emptyCount,
-                        bestSquare
-                    );
-                }
+                    bestSquare,
+                    limits.threads(),
+                    -INFINITY,
+                    INFINITY
+                );
                 bestSquare = context.rootBestSquare;
                 bestScore = context.rootScore;
                 completedDepth = emptyCount;
@@ -300,6 +300,8 @@ public final class SearchEngine {
                 + parallelMetrics.transpositionHits.get(),
             context.betaCutoffs + parallelMetrics.betaCutoffs.get(),
             context.pvsResearches + parallelMetrics.pvsResearches.get(),
+            context.aspirationSearches,
+            context.aspirationResearches,
             workerNodes,
             parallelMetrics.tasks.get(),
             searchTimedOut,
@@ -324,10 +326,98 @@ public final class SearchEngine {
             && BitBoard.count(legalMoves) > 2;
     }
 
+    private void searchIteration(
+        long player,
+        long opponent,
+        long legalMoves,
+        boolean rootPass,
+        int depth,
+        int previousBestSquare,
+        int previousScore,
+        int threads,
+        boolean allowAspiration
+    ) {
+        int alpha = -INFINITY;
+        int beta = INFINITY;
+        boolean aspiration = allowAspiration
+            && depth >= ASPIRATION_MINIMUM_DEPTH;
+        if (aspiration) {
+            alpha = Math.max(-INFINITY, previousScore - ASPIRATION_WINDOW);
+            beta = Math.min(INFINITY, previousScore + ASPIRATION_WINDOW);
+            context.aspirationSearches++;
+        }
+
+        searchRootWindow(
+            player,
+            opponent,
+            legalMoves,
+            rootPass,
+            depth,
+            previousBestSquare,
+            threads,
+            alpha,
+            beta
+        );
+        if (aspiration && aspirationFailed(alpha, beta, context.rootScore)) {
+            context.aspirationResearches++;
+            searchRootWindow(
+                player,
+                opponent,
+                legalMoves,
+                rootPass,
+                depth,
+                previousBestSquare,
+                threads,
+                -INFINITY,
+                INFINITY
+            );
+        }
+    }
+
+    private void searchRootWindow(
+        long player,
+        long opponent,
+        long legalMoves,
+        boolean rootPass,
+        int depth,
+        int previousBestSquare,
+        int threads,
+        int alpha,
+        int beta
+    ) {
+        if (rootPass) {
+            searchPassedRoot(player, opponent, depth, alpha, beta);
+        } else if (shouldSearchParallel(legalMoves, depth, threads)) {
+            searchRootParallel(
+                player,
+                opponent,
+                depth,
+                previousBestSquare,
+                alpha,
+                beta
+            );
+        } else {
+            searchRoot(
+                player,
+                opponent,
+                depth,
+                previousBestSquare,
+                alpha,
+                beta
+            );
+        }
+    }
+
+    static boolean aspirationFailed(int alpha, int beta, int score) {
+        return score <= alpha || score >= beta;
+    }
+
     private void searchPassedRoot(
         long player,
         long opponent,
-        int depth
+        int depth,
+        int alpha,
+        int beta
     ) {
         checkStop(true, context);
         context.nodes++;
@@ -335,19 +425,20 @@ public final class SearchEngine {
             opponent,
             player,
             depth,
-            -INFINITY,
-            INFINITY,
+            -beta,
+            -alpha,
             1,
             context
         );
         context.rootBestSquare = -1;
         context.rootScore = score;
-        store(
+        storeBound(
             player,
             opponent,
             depth,
             score,
-            TranspositionTable.EXACT,
+            alpha,
+            beta,
             -1
         );
     }
@@ -356,7 +447,9 @@ public final class SearchEngine {
         long player,
         long opponent,
         int depth,
-        int previousBestSquare
+        int previousBestSquare,
+        int alpha,
+        int beta
     ) {
         checkStop(true, context);
         context.nodes++;
@@ -373,8 +466,7 @@ public final class SearchEngine {
             context
         );
 
-        int alpha = -INFINITY;
-        int beta = INFINITY;
+        int originalAlpha = alpha;
         int bestScore = -INFINITY;
         int bestSquare = -1;
 
@@ -427,6 +519,9 @@ public final class SearchEngine {
             if (score > alpha) {
                 alpha = score;
             }
+            if (alpha >= beta) {
+                break;
+            }
         }
 
         commitRootResult(
@@ -434,7 +529,9 @@ public final class SearchEngine {
             opponent,
             depth,
             bestScore,
-            bestSquare
+            bestSquare,
+            originalAlpha,
+            beta
         );
     }
 
@@ -442,7 +539,9 @@ public final class SearchEngine {
         long player,
         long opponent,
         int depth,
-        int previousBestSquare
+        int previousBestSquare,
+        int alpha,
+        int beta
     ) {
         checkStop(true, context);
         context.nodes++;
@@ -459,7 +558,14 @@ public final class SearchEngine {
             context
         );
         if (moveCount <= 2) {
-            searchRoot(player, opponent, depth, previousBestSquare);
+            searchRoot(
+                player,
+                opponent,
+                depth,
+                previousBestSquare,
+                alpha,
+                beta
+            );
             return;
         }
 
@@ -470,10 +576,22 @@ public final class SearchEngine {
             opponent,
             firstMove,
             depth,
-            -INFINITY,
-            INFINITY,
+            alpha,
+            beta,
             context
         );
+        if (firstScore >= beta) {
+            commitRootResult(
+                player,
+                opponent,
+                depth,
+                firstScore,
+                firstSquare,
+                alpha,
+                beta
+            );
+            return;
+        }
         AtomicLong sharedBest = new AtomicLong(
             packBest(firstScore, 0, firstSquare)
         );
@@ -497,6 +615,8 @@ public final class SearchEngine {
                         move,
                         moveIndex,
                         depth,
+                        alpha,
+                        beta,
                         sharedBest,
                         completion
                     )
@@ -529,7 +649,9 @@ public final class SearchEngine {
             opponent,
             depth,
             bestScore,
-            bestSquare
+            bestSquare,
+            alpha,
+            beta
         );
     }
 
@@ -539,6 +661,8 @@ public final class SearchEngine {
         long move,
         int moveIndex,
         int depth,
+        int rootAlpha,
+        int rootBeta,
         AtomicLong sharedBest,
         WorkerCompletion completion
     ) {
@@ -550,29 +674,40 @@ public final class SearchEngine {
         boolean aborted = false;
         try {
             checkStop(true, workerContext);
-            int alpha = unpackBestScore(sharedBest.get());
+            int alpha = Math.max(
+                rootAlpha,
+                unpackBestScore(sharedBest.get())
+            );
+            if (alpha >= rootBeta) {
+                return new RootMoveResult(false);
+            }
             int score = searchRootMove(
                 player,
                 opponent,
                 move,
                 depth,
                 alpha,
-                alpha + 1,
+                Math.min(alpha + 1, rootBeta),
                 workerContext
             );
 
             if (rootProbeFailedHigh(alpha, score)) {
                 workerContext.pvsResearches++;
-                int currentAlpha = unpackBestScore(sharedBest.get());
-                score = searchRootMove(
-                    player,
-                    opponent,
-                    move,
-                    depth,
-                    currentAlpha,
-                    INFINITY,
-                    workerContext
+                int currentAlpha = Math.max(
+                    rootAlpha,
+                    unpackBestScore(sharedBest.get())
                 );
+                if (currentAlpha < rootBeta) {
+                    score = searchRootMove(
+                        player,
+                        opponent,
+                        move,
+                        depth,
+                        currentAlpha,
+                        rootBeta,
+                        workerContext
+                    );
+                }
             }
 
             int square = Long.numberOfTrailingZeros(move);
@@ -618,16 +753,19 @@ public final class SearchEngine {
         long opponent,
         int depth,
         int bestScore,
-        int bestSquare
+        int bestSquare,
+        int alpha,
+        int beta
     ) {
         context.rootBestSquare = bestSquare;
         context.rootScore = bestScore;
-        store(
+        storeBound(
             player,
             opponent,
             depth,
             bestScore,
-            TranspositionTable.EXACT,
+            alpha,
+            beta,
             bestSquare
         );
     }

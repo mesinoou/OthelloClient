@@ -10,6 +10,8 @@ public final class SearchResult {
     private final long transpositionHits;
     private final long betaCutoffs;
     private final long pvsResearches;
+    private final long aspirationSearches;
+    private final long aspirationResearches;
     private final long parallelNodes;
     private final int parallelTasks;
     private final long[] parallelWorkerNodes;
@@ -187,6 +189,52 @@ public final class SearchResult {
         int endgameEmpties,
         long[] parallelWorkerNodes
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            0L,
+            0L,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long aspirationSearches,
+        long aspirationResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -195,6 +243,8 @@ public final class SearchResult {
         this.transpositionHits = transpositionHits;
         this.betaCutoffs = betaCutoffs;
         this.pvsResearches = pvsResearches;
+        this.aspirationSearches = aspirationSearches;
+        this.aspirationResearches = aspirationResearches;
         this.parallelNodes = parallelNodes;
         this.parallelTasks = parallelTasks;
         this.parallelWorkerNodes = parallelWorkerNodes == null
@@ -239,6 +289,14 @@ public final class SearchResult {
 
     public long pvsResearches() {
         return pvsResearches;
+    }
+
+    public long aspirationSearches() {
+        return aspirationSearches;
+    }
+
+    public long aspirationResearches() {
+        return aspirationResearches;
     }
 
     public long parallelNodes() {

@@ -3,6 +3,23 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class SearchEngineTest {
 
     private static final Evaluator EVALUATOR = new Evaluator();
+    private static final PositionEvaluator AMPLIFIED_EVALUATOR =
+        new PositionEvaluator() {
+            @Override
+            public int evaluate(long player, long opponent) {
+                return EVALUATOR.evaluate(player, opponent) * 64;
+            }
+
+            @Override
+            public int terminalScore(long player, long opponent) {
+                return EVALUATOR.terminalScore(player, opponent);
+            }
+
+            @Override
+            public String description() {
+                return "amplified-test-evaluator";
+            }
+        };
 
     private SearchEngineTest() {
     }
@@ -12,6 +29,8 @@ public final class SearchEngineTest {
         testEndgameThresholdSelection();
         testTranspositionTableConsistency();
         testRootProbeResearchDecision();
+        testAspirationFailureDetection();
+        testAspirationMatchesFullWindow();
         testParallelMatchesSequential();
         testExactEndgame();
         testExactEndgameAtThreshold();
@@ -165,6 +184,84 @@ public final class SearchEngineTest {
             throw new AssertionError(
                 "fail-highしていない手が再探索されます。"
             );
+        }
+    }
+
+    private static void testAspirationFailureDetection() {
+        if (!SearchEngine.aspirationFailed(-100, 100, -100)) {
+            throw new AssertionError("fail-low境界を検出できません。");
+        }
+        if (!SearchEngine.aspirationFailed(-100, 100, 100)) {
+            throw new AssertionError("fail-high境界を検出できません。");
+        }
+        if (SearchEngine.aspirationFailed(-100, 100, 0)) {
+            throw new AssertionError("窓内評価値を再探索しています。");
+        }
+    }
+
+    private static void testAspirationMatchesFullWindow() {
+        PositionToMove[] positions = {
+            createMidgame(10),
+            createMidgame(18)
+        };
+        long researches = 0L;
+
+        for (int threads : new int[]{1, 4}) {
+            for (int index = 0; index < positions.length; index++) {
+                PositionToMove sample = positions[index];
+                SearchEngine aspiration = new SearchEngine(
+                    AMPLIFIED_EVALUATOR,
+                    new TranspositionTable(1 << 15),
+                    true,
+                    0,
+                    true
+                );
+                SearchEngine fullWindow = new SearchEngine(
+                    AMPLIFIED_EVALUATOR,
+                    new TranspositionTable(1 << 15),
+                    true,
+                    0,
+                    false
+                );
+                SearchLimits limits = new SearchLimits(10_000L, 6, threads);
+                SearchResult expected = fullWindow.search(
+                    sample.position,
+                    sample.color,
+                    limits
+                );
+                SearchResult actual = aspiration.search(
+                    sample.position,
+                    sample.color,
+                    limits
+                );
+
+                assertEquals(
+                    expected.completedDepth(),
+                    actual.completedDepth(),
+                    "aspiration completed depth " + threads + ":" + index
+                );
+                assertEquals(
+                    expected.score(),
+                    actual.score(),
+                    "aspiration score " + threads + ":" + index
+                );
+                assertLegalBestMove(
+                    sample.position,
+                    sample.color,
+                    actual.bestSquare()
+                );
+                if (actual.aspirationSearches() == 0L) {
+                    throw new AssertionError(
+                        "aspiration windowが使用されていません。"
+                    );
+                }
+                researches += actual.aspirationResearches();
+                aspiration.shutdown();
+                fullWindow.shutdown();
+            }
+        }
+        if (researches == 0L) {
+            throw new AssertionError("aspiration再探索を検証できません。");
         }
     }
 
