@@ -28,7 +28,7 @@ import java.util.Set;
 
 public final class ParallelSearchBenchmark {
 
-    private static final String BENCHMARK_VERSION = "parallel-search-v2";
+    private static final String BENCHMARK_VERSION = "parallel-search-v3";
     private static final int MIN_POSITION_PLY = 16;
     private static final int MAX_POSITION_PLY = 32;
     private static final int PRIME_DEPTH = 3;
@@ -168,6 +168,9 @@ public final class ParallelSearchBenchmark {
             "parallelWorkerNodes",
             "workerMonitorBlocks",
             "workerMonitorBlockedMillis",
+            "stabilityEnabled",
+            "stabilityChecks",
+            "stabilityCuts",
             "transpositionHits",
             "betaCutoffs",
             "pvsResearches",
@@ -335,7 +338,12 @@ public final class ParallelSearchBenchmark {
     private SearchEngine createPreparedEngine(int threads) {
         SearchEngine engine = new SearchEngine(
             evaluator,
-            new TranspositionTable(config.transpositionCapacity)
+            new TranspositionTable(config.transpositionCapacity),
+            true,
+            0,
+            true,
+            true,
+            config.stabilityCutoff
         );
         engine.search(
             BitBoardPosition.initial(),
@@ -433,6 +441,9 @@ public final class ParallelSearchBenchmark {
             join(result.parallelWorkerNodes()),
             Long.toString(measurement.workerMonitorBlocks),
             Long.toString(measurement.workerMonitorBlockedMillis),
+            Boolean.toString(config.stabilityCutoff),
+            Long.toString(result.stabilityChecks()),
+            Long.toString(result.stabilityCuts()),
             Long.toString(result.transpositionHits()),
             Long.toString(result.betaCutoffs()),
             Long.toString(result.pvsResearches()),
@@ -729,6 +740,7 @@ public final class ParallelSearchBenchmark {
         private int warmups = 1;
         private long seed = 20260721L;
         private int transpositionCapacity = 1 << 18;
+        private boolean stabilityCutoff = true;
         private boolean contentionMetrics;
         private boolean overwrite;
         private boolean help;
@@ -749,6 +761,8 @@ public final class ParallelSearchBenchmark {
                     config.overwrite = true;
                 } else if ("--contention-metrics".equals(option)) {
                     config.contentionMetrics = true;
+                } else if ("--disable-stability".equals(option)) {
+                    config.stabilityCutoff = false;
                 } else if ("--mode".equals(option)) {
                     config.mode = Mode.parse(value(args, ++index, option));
                 } else if ("--threads".equals(option)) {
@@ -824,6 +838,7 @@ public final class ParallelSearchBenchmark {
             stream.println("  --warmups N              warmups per thread count (default 1)");
             stream.println("  --seed N                 position seed (default 20260721)");
             stream.println("  --tt-capacity N          power-of-two entries (default 262144)");
+            stream.println("  --disable-stability      disable stability bound cutoff");
             stream.println("  --output PATH            write detailed CSV to PATH");
             stream.println("  --contention-metrics     record worker monitor blocking");
             stream.println("  --overwrite              replace an existing output file");

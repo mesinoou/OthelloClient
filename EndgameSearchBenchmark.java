@@ -22,6 +22,8 @@ public final class EndgameSearchBenchmark {
         int selectedThreads = args.length >= 5
             ? Integer.parseInt(args[4])
             : 0;
+        boolean stabilityEnabled = args.length < 6
+            || Boolean.parseBoolean(args[5]);
         if (empties < 1 || empties > SearchEngine.MAX_ENDGAME_THRESHOLD) {
             throw new IllegalArgumentException(
                 "empties must be between 1 and "
@@ -44,14 +46,15 @@ public final class EndgameSearchBenchmark {
         }
 
         warmUp(samples[0]);
-        int[] expectedScores = new int[SAMPLE_COUNT];
+        int[] expectedScores = new int[samples.length];
         for (int index = 0; index < expectedScores.length; index++) {
             expectedScores[index] = Integer.MIN_VALUE;
         }
 
         System.out.println(
-            "ordering,threads,empties,solved,samples,avgMillis,maxMillis,"
-                + "avgNodes,avgParallelTasks"
+            "ordering,stability,threads,empties,solved,samples,avgMillis,"
+                + "avgMicros,maxMillis,avgNodes,avgParallelTasks,"
+                + "avgStabilityChecks,avgStabilityCuts,scoreChecksum"
         );
         if (selectedThreads > 0) {
             runConfiguration(
@@ -59,6 +62,7 @@ public final class EndgameSearchBenchmark {
                 expectedScores,
                 repetitions,
                 true,
+                stabilityEnabled,
                 selectedThreads,
                 timeLimitMillis
             );
@@ -68,6 +72,7 @@ public final class EndgameSearchBenchmark {
                 expectedScores,
                 repetitions,
                 false,
+                stabilityEnabled,
                 1,
                 timeLimitMillis
             );
@@ -78,6 +83,7 @@ public final class EndgameSearchBenchmark {
                     expectedScores,
                     repetitions,
                     true,
+                    stabilityEnabled,
                     threads,
                     timeLimitMillis
                 );
@@ -100,12 +106,16 @@ public final class EndgameSearchBenchmark {
         int[] expectedScores,
         int repetitions,
         boolean ordering,
+        boolean stabilityEnabled,
         int threads,
         long timeLimitMillis
     ) {
         long elapsedNanos = 0L;
         long nodes = 0L;
         long parallelTasks = 0L;
+        long stabilityChecks = 0L;
+        long stabilityCuts = 0L;
+        long scoreChecksum = 1L;
         long maximumElapsedNanos = 0L;
         int searches = 0;
         int solved = 0;
@@ -117,7 +127,10 @@ public final class EndgameSearchBenchmark {
                     new Evaluator(),
                     new TranspositionTable(1 << 18),
                     ordering,
-                    samples[index].position.emptyCount()
+                    samples[index].position.emptyCount(),
+                    true,
+                    true,
+                    stabilityEnabled
                 );
                 SearchResult result = engine.search(
                     sample.position,
@@ -146,20 +159,28 @@ public final class EndgameSearchBenchmark {
                 );
                 nodes += result.nodes();
                 parallelTasks += result.parallelTasks();
+                stabilityChecks += result.stabilityChecks();
+                stabilityCuts += result.stabilityCuts();
+                scoreChecksum = 31L * scoreChecksum + result.score();
                 searches++;
             }
         }
 
         System.out.println(
             (ordering ? "endgame" : "generic")
+                + "," + stabilityEnabled
                 + "," + threads
                 + "," + samples[0].position.emptyCount()
                 + "," + solved
                 + "," + searches
                 + "," + elapsedNanos / searches / 1_000_000L
+                + "," + elapsedNanos / searches / 1_000L
                 + "," + maximumElapsedNanos / 1_000_000L
                 + "," + nodes / searches
                 + "," + parallelTasks / searches
+                + "," + stabilityChecks / searches
+                + "," + stabilityCuts / searches
+                + "," + scoreChecksum
         );
     }
 

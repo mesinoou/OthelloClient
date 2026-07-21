@@ -15,6 +15,8 @@ public final class SearchEngineTest {
         testExactLastNSolverEligibility();
         testExactLastNSolverMatchesGeneric();
         testExactLastNSolverEdgeCases();
+        testStabilityBounds();
+        testStabilityCutoffMatchesBaseline();
         testTranspositionTableConsistency();
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
@@ -187,6 +189,106 @@ public final class SearchEngineTest {
             null,
             true,
             SearchEngine.MAX_ENDGAME_THRESHOLD,
+            true,
+            enabled
+        );
+    }
+
+    private static void testStabilityBounds() {
+        if (SearchEngine.stabilityEligible(true, 4, true, 100_008, 100_009)
+            || SearchEngine.stabilityEligible(
+                true,
+                19,
+                true,
+                100_008,
+                100_009
+            )
+            || SearchEngine.stabilityEligible(
+                true,
+                12,
+                false,
+                100_008,
+                100_009
+            )
+            || SearchEngine.stabilityEligible(true, 12, true, 0, 1)
+            || !SearchEngine.stabilityEligible(
+                true,
+                12,
+                true,
+                100_008,
+                100_009
+            )
+            || !SearchEngine.stabilityEligible(
+                true,
+                12,
+                true,
+                -100_010,
+                -100_009
+            )) {
+            throw new AssertionError("stability cutoff eligibility is invalid");
+        }
+
+        long player = 0x0000_0000_0000_00ffL;
+        long opponent = 0xff00_0000_0000_0000L;
+        long bounds = SearchEngine.stabilityScoreBounds(player, opponent);
+        assertEquals(
+            Evaluator.terminalScoreForDifference(-48),
+            SearchEngine.stabilityLowerScore(bounds),
+            "stability lower score"
+        );
+        assertEquals(
+            Evaluator.terminalScoreForDifference(48),
+            SearchEngine.stabilityUpperScore(bounds),
+            "stability upper score"
+        );
+        long swapped = SearchEngine.stabilityScoreBounds(opponent, player);
+        assertEquals(
+            SearchEngine.stabilityLowerScore(bounds),
+            -SearchEngine.stabilityUpperScore(swapped),
+            "stability bound antisymmetry"
+        );
+    }
+
+    private static void testStabilityCutoffMatchesBaseline() {
+        SearchEngine baseline = stabilityEngine(false);
+        SearchEngine candidate = stabilityEngine(true);
+        for (int empties = 5; empties <= 9; empties++) {
+            for (int seed = 1; seed <= 4; seed++) {
+                PositionToMove sample = createEndgame(empties, seed);
+                SearchLimits limits = new SearchLimits(60_000L, empties, 1);
+                SearchResult expected = baseline.search(
+                    sample.position,
+                    sample.color,
+                    limits
+                );
+                SearchResult actual = candidate.search(
+                    sample.position,
+                    sample.color,
+                    limits
+                );
+                String label = "stability " + empties + " empties seed " + seed;
+                assertEquals(expected.score(), actual.score(), label + " score");
+
+                long bounds = SearchEngine.stabilityScoreBounds(
+                    sample.position.player(sample.color),
+                    sample.position.opponent(sample.color)
+                );
+                int lower = SearchEngine.stabilityLowerScore(bounds);
+                int upper = SearchEngine.stabilityUpperScore(bounds);
+                if (actual.score() < lower || actual.score() > upper) {
+                    throw new AssertionError(label + " escaped stability bounds");
+                }
+            }
+        }
+    }
+
+    private static SearchEngine stabilityEngine(boolean enabled) {
+        return new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 16),
+            true,
+            SearchEngine.MAX_ENDGAME_THRESHOLD,
+            true,
             true,
             enabled
         );

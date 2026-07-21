@@ -205,6 +205,16 @@ public final class EvaluatorTest {
             "terminal antisymmetry"
         );
         assertEquals(0, EVALUATOR.terminalScore(0x55L, 0xaaL), "draw");
+        assertEquals(
+            Evaluator.WIN_SCORE + 12,
+            Evaluator.terminalScoreForDifference(12),
+            "positive terminal difference"
+        );
+        assertEquals(
+            -Evaluator.WIN_SCORE - 12,
+            Evaluator.terminalScoreForDifference(-12),
+            "negative terminal difference"
+        );
     }
 
     private static long selectMove(long moves, int index) {

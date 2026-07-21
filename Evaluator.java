@@ -101,6 +101,10 @@ public final class Evaluator implements PositionEvaluator {
     @Override
     public int terminalScore(long player, long opponent) {
         int difference = BitBoard.count(player) - BitBoard.count(opponent);
+        return terminalScoreForDifference(difference);
+    }
+
+    static int terminalScoreForDifference(int difference) {
         if (difference > 0) {
             return WIN_SCORE + difference;
         }

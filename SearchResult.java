@@ -12,6 +12,8 @@ public final class SearchResult {
     private final long pvsResearches;
     private final long lmrSearches;
     private final long lmrResearches;
+    private final long stabilityChecks;
+    private final long stabilityCuts;
     private final long parallelNodes;
     private final int parallelTasks;
     private final long[] parallelWorkerNodes;
@@ -235,6 +237,56 @@ public final class SearchResult {
         int endgameEmpties,
         long[] parallelWorkerNodes
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            lmrSearches,
+            lmrResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes,
+            0L,
+            0L
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes,
+        long stabilityChecks,
+        long stabilityCuts
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -245,6 +297,8 @@ public final class SearchResult {
         this.pvsResearches = pvsResearches;
         this.lmrSearches = lmrSearches;
         this.lmrResearches = lmrResearches;
+        this.stabilityChecks = stabilityChecks;
+        this.stabilityCuts = stabilityCuts;
         this.parallelNodes = parallelNodes;
         this.parallelTasks = parallelTasks;
         this.parallelWorkerNodes = parallelWorkerNodes == null
@@ -297,6 +351,14 @@ public final class SearchResult {
 
     public long lmrResearches() {
         return lmrResearches;
+    }
+
+    public long stabilityChecks() {
+        return stabilityChecks;
+    }
+
+    public long stabilityCuts() {
+        return stabilityCuts;
     }
 
     public long parallelNodes() {

@@ -26,7 +26,18 @@ public final class SearchEngine {
     private static final int LMR_MINIMUM_DEPTH = 5;
     private static final int LMR_MINIMUM_MOVE_INDEX = 4;
     private static final int ENDGAME_FALLBACK_DEPTH = 4;
+    private static final int MIN_STABILITY_EMPTIES = 5;
+    private static final int MAX_EDGE_STABLE_DISCS = 28;
     private static final int ODD_REGION_BONUS = 1;
+    private static final int NO_STABILITY_CUTOFF = Integer.MIN_VALUE;
+    private static final int MAX_EDGE_LOWER_SCORE =
+        Evaluator.terminalScoreForDifference(
+            2 * MAX_EDGE_STABLE_DISCS - 64
+        );
+    private static final int MIN_EDGE_UPPER_SCORE =
+        Evaluator.terminalScoreForDifference(
+            64 - 2 * MAX_EDGE_STABLE_DISCS
+        );
     private static final long CORNERS = 0x8100000000000081L;
 
     private final PositionEvaluator evaluator;
@@ -35,6 +46,7 @@ public final class SearchEngine {
     private final int endgameThresholdOverride;
     private final boolean lmrEnabled;
     private final boolean exactLastNSolverEnabled;
+    private final boolean stabilityCutoffEnabled;
     private final SearchContext context = new SearchContext();
     private final ThreadLocal<SearchContext> workerContexts =
         ThreadLocal.withInitial(SearchContext::new);
@@ -108,6 +120,26 @@ public final class SearchEngine {
         boolean lmrEnabled,
         boolean exactLastNSolverEnabled
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean stabilityCutoffEnabled
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
@@ -121,6 +153,7 @@ public final class SearchEngine {
         this.endgameThresholdOverride = endgameThresholdOverride;
         this.lmrEnabled = lmrEnabled;
         this.exactLastNSolverEnabled = exactLastNSolverEnabled;
+        this.stabilityCutoffEnabled = stabilityCutoffEnabled;
     }
 
     public String evaluatorDescription() {
@@ -356,7 +389,10 @@ public final class SearchEngine {
             0,
             exactSolution,
             endgameEmpties,
-            parallelMetrics.workerNodesSnapshot()
+            parallelMetrics.workerNodesSnapshot(),
+            context.stabilityChecks
+                + parallelMetrics.stabilityChecks.get(),
+            context.stabilityCuts + parallelMetrics.stabilityCuts.get()
         );
     }
 
@@ -782,6 +818,27 @@ public final class SearchEngine {
             }
         }
 
+        int empties = BitBoard.countEmpty(player, opponent);
+        if (stabilityCutoffEnabled && stabilityEligible(
+            exactSearchActive,
+            empties,
+            nullWindow,
+            alpha,
+            beta
+        )) {
+            int stabilityScore = stabilityCutoff(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
+            if (stabilityScore != NO_STABILITY_CUTOFF) {
+                return stabilityScore;
+            }
+        }
+
         if (depth == 4 && exactSearchActive && exactLastNSolverEnabled) {
             return solveExactLastN(
                 player,
@@ -842,7 +899,6 @@ public final class SearchEngine {
             return value;
         }
 
-        int empties = BitBoard.countEmpty(player, opponent);
         if (empties == 1) {
             long move = legalMoves & -legalMoves;
             long flips = BitBoard.flips(player, opponent, move);
@@ -989,6 +1045,46 @@ public final class SearchEngine {
             );
         }
         return bestScore;
+    }
+
+    private int stabilityCutoff(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        SearchContext searchContext
+    ) {
+        searchContext.stabilityChecks++;
+        long bounds = stabilityScoreBounds(player, opponent);
+        int lowerScore = stabilityLowerScore(bounds);
+        if (lowerScore >= beta) {
+            searchContext.stabilityCuts++;
+            store(
+                player,
+                opponent,
+                depth,
+                lowerScore,
+                TranspositionTable.LOWER_BOUND,
+                -1
+            );
+            return lowerScore;
+        }
+
+        int upperScore = stabilityUpperScore(bounds);
+        if (upperScore <= alpha) {
+            searchContext.stabilityCuts++;
+            store(
+                player,
+                opponent,
+                depth,
+                upperScore,
+                TranspositionTable.UPPER_BOUND,
+                -1
+            );
+            return upperScore;
+        }
+        return NO_STABILITY_CUTOFF;
     }
 
     private int solveExactLastN(
@@ -1333,6 +1429,47 @@ public final class SearchEngine {
 
     static boolean exactLastNEligible(int depth, int empties) {
         return depth >= 2 && depth <= 4 && depth == empties;
+    }
+
+    static boolean stabilityEligible(
+        boolean exactSearch,
+        int empties,
+        boolean nullWindow,
+        int alpha,
+        int beta
+    ) {
+        return exactSearch
+            && empties >= MIN_STABILITY_EMPTIES
+            && empties <= MAX_ENDGAME_THRESHOLD
+            && nullWindow
+            && (beta <= MAX_EDGE_LOWER_SCORE
+                || alpha >= MIN_EDGE_UPPER_SCORE);
+    }
+
+    static long stabilityScoreBounds(long player, long opponent) {
+        long occupied = player | opponent;
+        int stablePlayer = Long.bitCount(
+            Evaluator.stableEdgeDiscs(player, occupied)
+        );
+        int stableOpponent = Long.bitCount(
+            Evaluator.stableEdgeDiscs(opponent, occupied)
+        );
+        int lowerScore = Evaluator.terminalScoreForDifference(
+            2 * stablePlayer - 64
+        );
+        int upperScore = Evaluator.terminalScoreForDifference(
+            64 - 2 * stableOpponent
+        );
+        return ((long) lowerScore << 32)
+            | ((long) upperScore & 0xffff_ffffL);
+    }
+
+    static int stabilityLowerScore(long bounds) {
+        return (int) (bounds >> 32);
+    }
+
+    static int stabilityUpperScore(long bounds) {
+        return (int) bounds;
     }
 
     static boolean lmrBoundCanBeStored(
@@ -1689,6 +1826,8 @@ public final class SearchEngine {
         private final AtomicLong pvsResearches = new AtomicLong();
         private final AtomicLong lmrSearches = new AtomicLong();
         private final AtomicLong lmrResearches = new AtomicLong();
+        private final AtomicLong stabilityChecks = new AtomicLong();
+        private final AtomicLong stabilityCuts = new AtomicLong();
         private final AtomicInteger tasks = new AtomicInteger();
         private final ConcurrentHashMap<String, AtomicLong> workerNodes =
             new ConcurrentHashMap<>();
@@ -1700,6 +1839,8 @@ public final class SearchEngine {
             pvsResearches.set(0L);
             lmrSearches.set(0L);
             lmrResearches.set(0L);
+            stabilityChecks.set(0L);
+            stabilityCuts.set(0L);
             tasks.set(0);
             workerNodes.clear();
         }
@@ -1711,6 +1852,8 @@ public final class SearchEngine {
             pvsResearches.addAndGet(searchContext.pvsResearches);
             lmrSearches.addAndGet(searchContext.lmrSearches);
             lmrResearches.addAndGet(searchContext.lmrResearches);
+            stabilityChecks.addAndGet(searchContext.stabilityChecks);
+            stabilityCuts.addAndGet(searchContext.stabilityCuts);
             tasks.incrementAndGet();
             workerNodes.computeIfAbsent(
                 Thread.currentThread().getName(),

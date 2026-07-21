@@ -1,0 +1,2 @@
+ordering,stability,threads,empties,solved,samples,avgMillis,avgMicros,maxMillis,avgNodes,avgParallelTasks,avgStabilityChecks,avgStabilityCuts,scoreChecksum
+endgame,false,4,12,36,36,6,6828,36,36237,20,0,0,-1940659355609689589

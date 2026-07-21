@@ -366,13 +366,7 @@ public final class LearnedEvaluator implements PositionEvaluator {
     @Override
     public int terminalScore(long player, long opponent) {
         int difference = Long.bitCount(player) - Long.bitCount(opponent);
-        if (difference > 0) {
-            return Evaluator.WIN_SCORE + difference;
-        }
-        if (difference < 0) {
-            return -Evaluator.WIN_SCORE + difference;
-        }
-        return 0;
+        return Evaluator.terminalScoreForDifference(difference);
     }
 
     @Override
