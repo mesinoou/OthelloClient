@@ -2,6 +2,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -291,7 +292,8 @@ public final class SearchEngine {
             0,
             0,
             exactSolution,
-            endgameEmpties
+            endgameEmpties,
+            parallelMetrics.workerNodesSnapshot()
         );
     }
 
@@ -1101,6 +1103,8 @@ public final class SearchEngine {
         private final AtomicLong betaCutoffs = new AtomicLong();
         private final AtomicLong pvsResearches = new AtomicLong();
         private final AtomicInteger tasks = new AtomicInteger();
+        private final ConcurrentHashMap<String, AtomicLong> workerNodes =
+            new ConcurrentHashMap<>();
 
         void reset() {
             nodes.set(0L);
@@ -1108,6 +1112,7 @@ public final class SearchEngine {
             betaCutoffs.set(0L);
             pvsResearches.set(0L);
             tasks.set(0);
+            workerNodes.clear();
         }
 
         void add(SearchContext searchContext) {
@@ -1116,6 +1121,17 @@ public final class SearchEngine {
             betaCutoffs.addAndGet(searchContext.betaCutoffs);
             pvsResearches.addAndGet(searchContext.pvsResearches);
             tasks.incrementAndGet();
+            workerNodes.computeIfAbsent(
+                Thread.currentThread().getName(),
+                ignored -> new AtomicLong()
+            ).addAndGet(searchContext.nodes);
+        }
+
+        long[] workerNodesSnapshot() {
+            return workerNodes.entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey())
+                .mapToLong(entry -> entry.getValue().get())
+                .toArray();
         }
     }
 

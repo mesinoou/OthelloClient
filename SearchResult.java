@@ -1,3 +1,5 @@
+import java.util.Arrays;
+
 public final class SearchResult {
 
     private final int bestSquare;
@@ -10,6 +12,7 @@ public final class SearchResult {
     private final long pvsResearches;
     private final long parallelNodes;
     private final int parallelTasks;
+    private final long[] parallelWorkerNodes;
     private final boolean timedOut;
     private final boolean stopped;
     private final boolean openingBookMove;
@@ -142,6 +145,48 @@ public final class SearchResult {
         boolean exactSolution,
         int endgameEmpties
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            new long[0]
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -152,6 +197,9 @@ public final class SearchResult {
         this.pvsResearches = pvsResearches;
         this.parallelNodes = parallelNodes;
         this.parallelTasks = parallelTasks;
+        this.parallelWorkerNodes = parallelWorkerNodes == null
+            ? new long[0]
+            : Arrays.copyOf(parallelWorkerNodes, parallelWorkerNodes.length);
         this.timedOut = timedOut;
         this.stopped = stopped;
         this.openingBookMove = openingBookMove;
@@ -199,6 +247,10 @@ public final class SearchResult {
 
     public int parallelTasks() {
         return parallelTasks;
+    }
+
+    public long[] parallelWorkerNodes() {
+        return Arrays.copyOf(parallelWorkerNodes, parallelWorkerNodes.length);
     }
 
     public boolean timedOut() {

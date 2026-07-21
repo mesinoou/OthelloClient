@@ -139,6 +139,16 @@ public final class SearchEngineTest {
                     "並列探索ワーカーが使用されていません: sample=" + index
                 );
             }
+            long measuredWorkerNodes = 0L;
+            for (long workerNodes : parallel.parallelWorkerNodes()) {
+                measuredWorkerNodes += workerNodes;
+            }
+            if (measuredWorkerNodes != parallel.parallelNodes()) {
+                throw new AssertionError(
+                    "ワーカー別ノード数の合計が一致しません: sample="
+                        + index
+                );
+            }
             sequentialEngine.shutdown();
             parallelEngine.shutdown();
         }
