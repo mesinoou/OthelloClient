@@ -704,9 +704,9 @@ public final class SearchEngine {
         if (ply >= SearchContext.MAX_PLY) {
             return evaluator.evaluate(player, opponent);
         }
-        if (exactLastNSolverEnabled
-            && depth >= 2
+        if (depth >= 2
             && depth <= 4
+            && exactLastNSolverEnabled
             && exactLastNEligible(
             depth,
             BitBoard.countEmpty(player, opponent)
