@@ -16,6 +16,7 @@ from typing import Any, TextIO
 import numpy as np
 
 from training.patterns import PATTERN_GROUPS, PatternGroup
+from training.export_java_model import export_java_model
 
 try:
     import torch
@@ -1277,6 +1278,8 @@ def main() -> int:
             args.batch_size,
             not args.no_progress,
         )
+        java_tables_path = args.output_dir / "evaluation-tables.bin"
+        java_export = export_java_model(tables_path, java_tables_path)
 
         test_results = []
         for phase in range(len(phase_starts)):
@@ -1359,6 +1362,7 @@ def main() -> int:
                 "dtype": "int16",
                 "score_scale": args.score_scale,
                 "clipped_entries": clipped,
+                "java_runtime": java_export,
             },
             "test": test_results,
             "smoke_only": args.max_samples_per_phase is not None,

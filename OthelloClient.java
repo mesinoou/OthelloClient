@@ -6,6 +6,8 @@ import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -52,12 +54,25 @@ public final class OthelloClient {
         int searchThreads,
         long timeMillis
     ) {
+        this(host, port, nickname, searchThreads, timeMillis, null);
+    }
+
+    public OthelloClient(
+        String host,
+        int port,
+        String nickname,
+        int searchThreads,
+        long timeMillis,
+        Path evaluationModel
+    ) {
         this.host = host;
         this.port = port;
         this.nickname = nickname;
         this.searchThreads = searchThreads;
         this.timeMillis = timeMillis;
-        this.ai = new OthelloAI();
+        this.ai = evaluationModel == null
+            ? new OthelloAI()
+            : new OthelloAI(evaluationModel);
         this.searchLimits = new SearchLimits(timeMillis, 64, searchThreads);
         this.searchController = Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "othello-search-control");
@@ -79,6 +94,7 @@ public final class OthelloClient {
                     + SearchEngine.endgameThresholdFor(timeMillis)
                     + " (ルート並列探索)"
             );
+            System.out.println("評価関数: " + ai.evaluatorDescription());
             if (ai.openingBookSize() > 0) {
                 System.out.println(
                     "定石データ: entries=" + ai.openingBookSize()
@@ -537,7 +553,7 @@ public final class OthelloClient {
     }
 
     public static void main(String[] args) {
-        if (args.length > 5) {
+        if (args.length > 6) {
             printUsage();
             return;
         }
@@ -550,6 +566,9 @@ public final class OthelloClient {
             Runtime.getRuntime().availableProcessors() - 1
         );
         long timeMillis = DEFAULT_TIME_MILLIS;
+        Path evaluationModel = args.length >= 6
+            ? Paths.get(args[5])
+            : null;
 
         try {
             if (args.length >= 2) {
@@ -578,13 +597,24 @@ public final class OthelloClient {
         }
 
         System.out.println("サーバに接続を試みます: " + host + ":" + port);
-        new OthelloClient(host, port, nickname, threads, timeMillis).start();
+        try {
+            new OthelloClient(
+                host,
+                port,
+                nickname,
+                threads,
+                timeMillis,
+                evaluationModel
+            ).start();
+        } catch (IllegalArgumentException error) {
+            System.err.println(error.getMessage());
+        }
     }
 
     private static void printUsage() {
         System.err.println(
             "使い方: java OthelloClient <host> <port> "
-                + "[nickname] [threads] [timeMillis]"
+                + "[nickname] [threads] [timeMillis] [evaluationModel]"
         );
     }
 }

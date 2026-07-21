@@ -24,7 +24,7 @@ public final class SearchEngine {
     private static final int ODD_REGION_BONUS = 1;
     private static final long CORNERS = 0x8100000000000081L;
 
-    private final Evaluator evaluator;
+    private final PositionEvaluator evaluator;
     private final TranspositionTable table;
     private final boolean endgameOrderingEnabled;
     private final int endgameThresholdOverride;
@@ -46,12 +46,12 @@ public final class SearchEngine {
         this(new Evaluator(), new TranspositionTable(1 << 18));
     }
 
-    SearchEngine(Evaluator evaluator, TranspositionTable table) {
+    SearchEngine(PositionEvaluator evaluator, TranspositionTable table) {
         this(evaluator, table, true);
     }
 
     SearchEngine(
-        Evaluator evaluator,
+        PositionEvaluator evaluator,
         TranspositionTable table,
         boolean endgameOrderingEnabled
     ) {
@@ -59,7 +59,7 @@ public final class SearchEngine {
     }
 
     SearchEngine(
-        Evaluator evaluator,
+        PositionEvaluator evaluator,
         TranspositionTable table,
         boolean endgameOrderingEnabled,
         int endgameThresholdOverride
@@ -75,6 +75,10 @@ public final class SearchEngine {
             throw new IllegalArgumentException("invalid endgame threshold");
         }
         this.endgameThresholdOverride = endgameThresholdOverride;
+    }
+
+    public String evaluatorDescription() {
+        return evaluator.description();
     }
 
     public synchronized SearchResult search(

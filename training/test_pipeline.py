@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import struct
 import io
+from pathlib import Path
+import tempfile
 import unittest
+import zlib
 
 import numpy as np
 
@@ -20,6 +23,13 @@ from training.othello import (
     wthor_move_code_to_square,
 )
 from training.patterns import PATTERN_GROUPS, encode_group
+from training.export_java_model import (
+    AUXILIARY_TABLES,
+    MAGIC,
+    PATTERN_TABLES,
+    export_java_model,
+    reverse_ternary_indices,
+)
 from training.train_model import (
     PatternModel,
     ProgressBar,
@@ -225,6 +235,45 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         progress = ProgressBar("train", 4, True, stream=output)
         progress.update(4)
         self.assertIn("100.0%", output.getvalue())
+
+    def test_java_model_export_merges_reverse_patterns(self) -> None:
+        self.assertEqual(3, int(reverse_ternary_indices(2)[1]))
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source_path = directory / "evaluation-tables.npz"
+            output_path = directory / "evaluation-tables.bin"
+            payload: dict[str, np.ndarray] = {
+                "phase_starts": np.asarray((20, 30, 40, 50), dtype=np.int16),
+                "score_scale": np.asarray((6400,), dtype=np.int32),
+                "phase_bias": np.zeros(4, dtype=np.int32),
+            }
+            for phase in range(4):
+                for suffix, digits, _, _ in PATTERN_TABLES:
+                    values = np.zeros(3**digits, dtype=np.int16)
+                    if suffix == "diagonal":
+                        values[1] = 5
+                        values[3**7] = 7
+                    payload[f"phase{phase}_{suffix}"] = values
+                for suffix, length in AUXILIARY_TABLES:
+                    payload[f"phase{phase}_{suffix}"] = np.zeros(
+                        length,
+                        dtype=np.int16,
+                    )
+            np.savez_compressed(source_path, **payload)
+
+            result = export_java_model(source_path, output_path)
+            binary = output_path.read_bytes()
+            self.assertEqual(MAGIC, struct.unpack_from(">i", binary, 0)[0])
+            self.assertEqual(
+                zlib.crc32(binary[:-4]) & 0xFFFFFFFF,
+                struct.unpack_from(">I", binary, len(binary) - 4)[0],
+            )
+            first_table_offset = 8 * 4 + 4 * 4 + 4 + 4
+            self.assertEqual(
+                12,
+                struct.unpack_from(">h", binary, first_table_offset + 2)[0],
+            )
+            self.assertEqual(1, result["score_divisor"])
 
 
 if __name__ == "__main__":
