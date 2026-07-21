@@ -53,8 +53,8 @@ public final class EndgameSearchBenchmark {
 
         System.out.println(
             "ordering,stability,threads,empties,solved,samples,avgMillis,"
-                + "maxMillis,avgNodes,avgParallelTasks,avgStabilityChecks,"
-                + "avgStabilityCuts,scoreChecksum"
+                + "avgMicros,maxMillis,avgNodes,avgParallelTasks,"
+                + "avgStabilityChecks,avgStabilityCuts,scoreChecksum"
         );
         if (selectedThreads > 0) {
             runConfiguration(
@@ -174,6 +174,7 @@ public final class EndgameSearchBenchmark {
                 + "," + solved
                 + "," + searches
                 + "," + elapsedNanos / searches / 1_000_000L
+                + "," + elapsedNanos / searches / 1_000L
                 + "," + maximumElapsedNanos / 1_000_000L
                 + "," + nodes / searches
                 + "," + parallelTasks / searches
