@@ -11,6 +11,7 @@ public final class SearchEngineTest {
         testAgainstReferenceNegamax();
         testEndgameThresholdSelection();
         testTranspositionTableDepthGate();
+        testSpecializedLeafSearch();
         testTranspositionTableConsistency();
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
@@ -95,6 +96,49 @@ public final class SearchEngineTest {
         }
         if (!SearchEngine.ttEligible(2)) {
             throw new AssertionError("depth 2でTTが無効です。");
+        }
+    }
+
+    private static void testSpecializedLeafSearch() {
+        if (!SearchEngine.specializedLeafDepth(0)
+            || !SearchEngine.specializedLeafDepth(1)
+            || SearchEngine.specializedLeafDepth(2)) {
+            throw new AssertionError("leaf探索のdepth境界が不正です。");
+        }
+
+        PositionToMove[] positions = {
+            new PositionToMove(BitBoardPosition.initial(), 1),
+            createMidgame(7),
+            createMidgame(19)
+        };
+        for (int index = 0; index < positions.length; index++) {
+            PositionToMove sample = positions[index];
+            SearchEngine engine = new SearchEngine(
+                EVALUATOR,
+                new TranspositionTable(1 << 14)
+            );
+            SearchResult result = engine.search(
+                sample.position,
+                sample.color,
+                new SearchLimits(10_000L, 1, 1)
+            );
+            int expected = referenceNegamax(
+                sample.position.player(sample.color),
+                sample.position.opponent(sample.color),
+                1
+            );
+            assertEquals(expected, result.score(), "leaf score " + index);
+            assertEquals(
+                expected,
+                referenceMoveScore(
+                    sample.position,
+                    sample.color,
+                    result.bestSquare(),
+                    1
+                ),
+                "leaf best move " + index
+            );
+            engine.shutdown();
         }
     }
 

@@ -684,6 +684,18 @@ public final class SearchEngine {
         if (ply >= SearchContext.MAX_PLY) {
             return evaluator.evaluate(player, opponent);
         }
+        if (specializedLeafDepth(depth)) {
+            return searchLeaf(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                ply,
+                searchContext,
+                false
+            );
+        }
 
         int originalAlpha = alpha;
         int originalBeta = beta;
@@ -908,6 +920,88 @@ public final class SearchEngine {
             );
         }
         return bestScore;
+    }
+
+    private int searchLeaf(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        int ply,
+        SearchContext searchContext,
+        boolean countNode
+    ) {
+        if (countNode) {
+            searchContext.nodes++;
+            if ((searchContext.nodes & STOP_CHECK_MASK) == 0L) {
+                checkStop(false, searchContext);
+            }
+        }
+        if (ply >= SearchContext.MAX_PLY) {
+            return evaluator.evaluate(player, opponent);
+        }
+
+        long legalMoves = BitBoard.legalMoves(player, opponent);
+        if (legalMoves == 0L) {
+            if (BitBoard.legalMoves(opponent, player) == 0L) {
+                return evaluator.terminalScore(player, opponent);
+            }
+            return -searchLeaf(
+                opponent,
+                player,
+                depth,
+                -beta,
+                -alpha,
+                ply + 1,
+                searchContext,
+                true
+            );
+        }
+
+        if (depth <= 0) {
+            return evaluator.evaluate(player, opponent);
+        }
+
+        if (BitBoard.countEmpty(player, opponent) == 1) {
+            long move = legalMoves & -legalMoves;
+            long flips = BitBoard.flips(player, opponent, move);
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            return -evaluator.terminalScore(nextOpponent, nextPlayer);
+        }
+
+        int bestScore = -INFINITY;
+        long remaining = legalMoves;
+        while (remaining != 0L) {
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            int score = -searchLeaf(
+                nextOpponent,
+                nextPlayer,
+                0,
+                -beta,
+                -alpha,
+                ply + 1,
+                searchContext,
+                true
+            );
+
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                break;
+            }
+        }
+        return bestScore;
+    }
+
+    static boolean specializedLeafDepth(int depth) {
+        return depth <= 1;
     }
 
     static boolean lmrBoundCanBeStored(
