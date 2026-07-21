@@ -38,7 +38,7 @@
 | SEARCH-016 | accepted | `baseline/shallow-tt-20260721` | `codex/specialized-leaf-search` | 通常探索depth 0/1を専用関数へ分岐 | `benchmark/results/search-016-specialized-leaf-search-2026-07-21.md` | 4T固定深さ-29.56%、500 ms深さ+0.44、Validation-31.64%、不一致0件 | 統合対象 |
 | EVAL-001 | rejected | `baseline/specialized-leaf-20260721` | `codex/chunked-pattern-index` | byte単位の3進寄与表で学習評価indexを構築 | [experiment report](https://github.com/mesinoou/OthelloClient/blob/codex/chunked-pattern-index/benchmark/results/eval-001-chunked-pattern-index-2026-07-21.md) | 評価中央値+59.26%、4T固定時間+15.65%、評価値不一致0件 | 実験ブランチへ保存し不採用 |
 | SEARCH-008 | accepted | `baseline/specialized-leaf-20260721` | `codex/exact-last-n` | 残り1〜4手を専用終盤solverで探索 | `benchmark/results/search-008-exact-last-n-2026-07-21.md` | 4T完全読み時間を12〜18空きで49〜62%短縮、不一致0/352 | 統合対象 |
-| SEARCH-009 | running | `baseline/exact-last-n-20260721` | `codex/two-way-tt` | 同じentry数で2-way bucket TTへ変更 | `benchmark/ALGORITHM_ROADMAP.md` | 測定準備中 | L0-L3、L5、L7で判定 |
+| SEARCH-009 | rejected | `baseline/exact-last-n-20260721` | `codex/two-way-tt` | 同じentry数で2-way bucket TTへ変更 | `benchmark/results/search-009-two-way-tt-2026-07-21.md` | 4T node削減0.07〜0.57%、500 ms深度同値、不一致0/352 | 性能ゲート未達のため実験ブランチへ保存 |
 | SEARCH-010 | planned | latest accepted | `codex/enhanced-tt-cutoff` | 十分深い子局面TT boundによる安全なbeta cutoff | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-009後 |
 | SEARCH-011 | planned | latest accepted | `codex/stability-cutoff` | edge stable discsによる終盤window縮小 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-010後 |
 | RUNTIME-001 | planned | latest accepted | `codex/runtime-auto-sizing` | 接続前診断でthreadsとTT容量を自動選択 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | 正確な探索高速化後 |
