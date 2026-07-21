@@ -35,11 +35,14 @@
 | SEARCH-005 | rejected | `benchmark/parallel-v2-20260721` | `codex/aspiration-window` | 反復深化の前回評価値を中心にaspiration windowを適用 | `benchmark/results/search-005-aspiration-window-2026-07-21.md` | 標準4Tでノード4.46%減、別seedで1.19%減、500 ms深さは微減 | 効果が小さく局面依存のため不採用 |
 | SEARCH-006 | accepted | `benchmark/parallel-v2-20260721` | `codex/late-move-reduction` | 後順位の非PV手を浅く探索し、fail-high時だけ全深度で再探索 | `benchmark/results/search-006-late-move-reduction-2026-07-21.md` | 4T深さ9でノード22.04%減、500 ms深さ+0.62、同時点Edax基準比+1.5pt | `baseline/lmr-20260721`として統合 |
 | SEARCH-007 | planned | latest accepted | `codex/shallow-tt-gating` | depth 2未満のTT probe/storeを省略 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | 最初に実施 |
+| SEARCH-016 | planned | latest accepted | `codex/specialized-leaf-search` | 通常探索depth 0/1を専用関数へ分岐 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-007後 |
 | EVAL-001 | planned | latest accepted | `codex/chunked-pattern-index` | byte単位の3進寄与表で学習評価indexを構築 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-007後 |
 | SEARCH-008 | planned | latest accepted | `codex/exact-last-n` | 残り1〜4手を専用終盤solverで探索 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | EVAL-001後 |
 | SEARCH-009 | planned | latest accepted | `codex/two-way-tt` | 同じentry数で2-way bucket TTへ変更 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-008後 |
 | SEARCH-010 | planned | latest accepted | `codex/enhanced-tt-cutoff` | 十分深い子局面TT boundによる安全なbeta cutoff | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-009後 |
 | SEARCH-011 | planned | latest accepted | `codex/stability-cutoff` | edge stable discsによる終盤window縮小 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-010後 |
+| RUNTIME-001 | planned | latest accepted | `codex/runtime-auto-sizing` | 接続前診断でthreadsとTT容量を自動選択 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | 正確な探索高速化後 |
+| CLIENT-001 | planned | latest accepted | `codex/opponent-turn-pondering` | 相手手番探索で共有TTを予熱 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | RUNTIME-001後 |
 | SEARCH-012 | planned | latest accepted | `codex/adaptive-lmr` | 深さ・手順・相手可動数に応じてLMRを2 ply化 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-011後 |
 | SEARCH-013 | planned | latest accepted | `codex/multi-probcut` | holdout校正したMulti-ProbCut | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-012後 |
 | SEARCH-014 | planned | latest accepted | `codex/interior-ybwc` | 浅いplyのYBWC split pointを追加 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-013後 |

@@ -6,20 +6,34 @@
 
 過去に単独で不採用となったhistory heuristic、killer heuristic、aspiration windowは再実装しない。null-move pruningは、パスがありzugzwang的な局面も生じるOthelloでは安全性を保証しにくいため候補外とする。
 
+## User-proposed improvements
+
+| Proposal | Assessment | Experiment |
+|---|---|---|
+| 相手手番待ち時間の活用 | 探索時間を実質的に追加できる有力案。通信処理と探索を分離し、結果ではなく共有TTだけを再利用する | CLIENT-001 |
+| 実行環境診断 | 本番機でのthread過不足と固定TT容量を補正できる。明示設定を常に優先し、接続前だけ診断する | RUNTIME-001 |
+| 葉ノード探索の簡略化 | 通常探索depth 0/1の高頻度overheadを除く案として採用。終盤last-N solverとは別実験にする | SEARCH-016 |
+| ハッシュテーブル自前実装 | 現在もprimitive配列、独自hash、striped lockの自前TTである。浅いaccess省略と2-way bucket化を先に評価する | SEARCH-007, SEARCH-009 |
+
+相手手番探索は規則上許可されていることを大会前に再確認し、規則変更時は設定一つで無効化できるようにする。環境診断とponderは性能測定条件を変えるため、通常の固定thread benchmarkでは無効化する。
+
 ## Execution order
 
 | Order | ID | Algorithm | Expected effect | Result risk | Required levels |
 |---:|---|---|---|---|---|
 | 1 | SEARCH-007 | Shallow TT access gating | synchronized TTアクセス削減 | none | L0-L3, L5, L7 |
-| 2 | EVAL-001 | Chunked ternary pattern indexing | 学習評価の高速化 | none | L0-L4, L6, L7 |
-| 3 | SEARCH-008 | Exact last-N solver | 終盤完全読みの高速化 | none | L0-L3, L5, L7 |
-| 4 | SEARCH-009 | Two-way bucket transposition table | 衝突削減とTT hit増加 | none | L0-L3, L5, L7 |
-| 5 | SEARCH-010 | Enhanced Transposition Cutoff | 子局面TT boundによる枝刈り | none | L0-L3, L5, L7 |
-| 6 | SEARCH-011 | Stability bound cutoff | 終盤の安全なwindow縮小 | none | L0-L3, L5, L7 |
-| 7 | SEARCH-012 | Adaptive LMR | 後順位の低価値手を追加削減 | selective | L0-L5, L7 |
-| 8 | SEARCH-013 | Calibrated Multi-ProbCut | 統計的な浅い探索による枝刈り | selective | L0-L6, L7 |
-| 9 | SEARCH-014 | Interior YBWC split points | 不均衡な部分木で4T利用率向上 | scheduling | L0-L5, L7 |
-| 10 | SEARCH-015 | Timed-search Lazy SMP helper | 反復深化中のTT先行生成 | selective scheduling | L0-L5, L7 |
+| 2 | SEARCH-016 | Specialized depth-0/1 leaf search | 通常探索の葉処理簡略化 | none | L0-L3, L5, L7 |
+| 3 | EVAL-001 | Chunked ternary pattern indexing | 学習評価の高速化 | none | L0-L4, L6, L7 |
+| 4 | SEARCH-008 | Exact last-N solver | 終盤完全読みの高速化 | none | L0-L3, L5, L7 |
+| 5 | SEARCH-009 | Two-way bucket transposition table | 衝突削減とTT hit増加 | none | L0-L3, L5, L7 |
+| 6 | SEARCH-010 | Enhanced Transposition Cutoff | 子局面TT boundによる枝刈り | none | L0-L3, L5, L7 |
+| 7 | SEARCH-011 | Stability bound cutoff | 終盤の安全なwindow縮小 | none | L0-L3, L5, L7 |
+| 8 | RUNTIME-001 | Environment profiling and auto-sizing | 本番CPU・heapへの適応 | configuration | L0, L1, L3, L5, L7 |
+| 9 | CLIENT-001 | Opponent-turn pondering | 相手思考時間で共有TTを予熱 | timing | L0, L1, L4, L5, L7 |
+| 10 | SEARCH-012 | Adaptive LMR | 後順位の低価値手を追加削減 | selective | L0-L5, L7 |
+| 11 | SEARCH-013 | Calibrated Multi-ProbCut | 統計的な浅い探索による枝刈り | selective | L0-L6, L7 |
+| 12 | SEARCH-014 | Interior YBWC split points | 不均衡な部分木で4T利用率向上 | scheduling | L0-L5, L7 |
+| 13 | SEARCH-015 | Timed-search Lazy SMP helper | 反復深化中のTT先行生成 | selective scheduling | L0-L5, L7 |
 
 各実験は、その時点の最新採用ベースラインから新しいブランチを作る。不採用実験の実装を次の候補へ引き継がない。前段が不採用でも、明示した依存関係がない次候補は実施できる。
 
@@ -46,6 +60,35 @@ if useTable:
 - `transpositionHits`, fixed-depth elapsed time, nodes/s, 500 ms到達深さ
 - 4Tで到達深さ+0.25 ply、または固定深さ時間5%以上短縮を採用候補
 - ノード増加が15%以上、またはDeep suiteで時間が悪化した場合は不採用
+
+## SEARCH-016: Specialized depth-0/1 leaf search
+
+### Hypothesis
+
+通常探索のdepth 0と1は呼び出し回数が多いが、現在は汎用`pvs`を通り、TT、move配列、priority計算、selection sort、再帰呼び出しの費用を負う。SEARCH-007採用後の浅いTT省略を前提に、同じpass・終局規則を持つ専用関数へ分岐する。
+
+```text
+if depth == 0:
+    return evaluateLeafWithPassAndTerminal(player, opponent)
+if depth == 1:
+    return searchOnePlyLeaf(player, opponent, alpha, beta)
+
+searchOnePlyLeaf:
+    iterate legal move bits without move arrays or sorting
+    apply move
+    evaluate child with pass and terminal handling
+    apply alpha-beta cutoff
+```
+
+depth 0でも、手番側に合法手がなく相手に合法手がある場合は視点を反転して評価する。両者に合法手がなければ`terminalScore`を返す。この既存意味論を変えず、手順付けheuristicやLMRは追加しない。
+
+### Decision data
+
+- pass、連続pass、wipeout、通常葉を含む汎用PVSとの評価値完全一致
+- `leaf0Calls`, `leaf1Calls`, leaf当たり時間、評価呼出し数
+- Standard/Validation/Deepで最善手・評価値一致
+- 4T固定深さ時間10%以上短縮、または500 ms到達深さ+0.25 ply
+- 葉の評価呼出しが15%以上増える場合は、不採用または軽量手順付けを別IDで検討
 
 ## EVAL-001: Chunked ternary pattern indexing
 
@@ -176,6 +219,64 @@ cut if alpha >= beta
 - 12〜18空き終盤で4T時間5%以上短縮
 - cutoff 0件または計算費用で時間が悪化する場合は不採用
 
+## RUNTIME-001: Environment profiling and auto-sizing
+
+### Hypothesis
+
+本番計算機ではlogical processor数、heap上限、memory帯域が異なる。現在の既定値`availableProcessors() - 1`と固定`2^18` entry TTでは、CPUを使い切れない場合とheapに対してTTが小さすぎる場合がある。接続前に環境を診断し、明示指定がない項目だけを保守的に自動選択する。
+
+```text
+profile = {
+    logicalProcessors,
+    maxHeapBytes,
+    osName,
+    osArch,
+    javaVersion
+}
+ttBudget = clamp(maxHeapBytes / 16, 8 MiB, 128 MiB)
+ttEntries = largestPowerOfTwoFitting(ttBudget)
+threadCandidates = powersOfTwoUpTo(min(logicalProcessors, 8))
+```
+
+`threads=auto`のときだけ、接続前の固定局面で候補thread数を短時間測定し、500 ms相当の到達深さ、同深さならelapsed timeで選ぶ。測定上限は合計2秒とする。数値を明示した場合は必ずその値を優先し、自動調整を無効化する。TT容量はCLIまたはsystem propertyで上書き可能にする。
+
+### Decision data
+
+- 起動時にprofile、候補測定値、採用threads、TT entry数、推定TT bytesを表示
+- `-XX:ActiveProcessorCount=1,2,4,8`と`-Xmx64m,256m,1g`の組み合わせをテスト
+- 選択された構成でOOM、過剰thread、2秒超過がない
+- 現PCとLinux本番機の双方で、固定4T設定より明確に悪化する構成を選ばない
+- 正式探索benchmarkでは従来どおりthreadsとTT容量を固定し、自動選択を混ぜない
+
+## CLIENT-001: Opponent-turn pondering
+
+### Hypothesis
+
+大会規則が相手手番中の計算を許可しているため、`TURN opponent`と最新`BOARD`を受信した時点から相手視点で探索し、共有TTへ予想応手とその子局面を登録できる。相手の実着手を受信したら即座に停止し、自手番探索は温まった同じTTを再利用する。
+
+```text
+on opponent TURN with a valid board:
+    start ponder search as opponent
+    ponderBudget = min(8000 ms, ownMoveBudget * 0.80)
+    never send PUT from ponder result
+
+on changed BOARD, own TURN, END, ERROR, or CLOSE:
+    request ponder stop
+    wait for controller handoff
+    start authoritative own-turn search
+```
+
+`OthelloAI`の同じ`SearchEngine`をsingle search controller上で使い、探索間でTTだけを保持する。定石が見つかってもponderを即終了せず、通常探索を行って定石後の部分木を生成する。自手番の着手は従来のauthoritative searchだけが送信する。
+
+### Decision data
+
+- ponder開始数、実時間、探索node、完了深さ、予想相手手一致率
+- 自手番開始時のTT hit増分、到達深さ、着手送信までの時間
+- 相手待ち時間0/50/500/2000/8000 msのmock server試験
+- `BOARD`受信からponder停止まで50 ms未満、PUT二重送信・相手手番PUT 0件
+- ponderあり・なしを同じserver棋譜と相手待ち時間で100局比較
+- CPU温度やclock低下で自手番探索が悪化する場合は割合を別IDで再評価
+
 ## SEARCH-012: Adaptive LMR
 
 ### Hypothesis
@@ -283,6 +384,7 @@ main search publishes the move from its deepest completed iteration
 ## Deferred ideas
 
 - history、killer、aspirationの組み合わせ再試験: 個別効果が小さく、当面は行わない
+- compact/stamped lock-free TT: 現在の`TranspositionTable`はすでにprimitive配列の自前実装である。SEARCH-007とSEARCH-009後もJFRでTT accessがCPU時間の5%以上を占める場合だけ、seqlock方式を新しい実験IDへ昇格する
 - 内部安定石を含む完全stability計算: SEARCH-011のedge-only版にcut実績がある場合だけ検討
 - 全子boundを使うETC fail-low: SEARCH-010の安全なfail-high版が採用された後に分離して検討
 - 60 phase評価モデル、追加pattern、定石再生成: 探索実験と混ぜず、学習データ拡張後の別系列とする
