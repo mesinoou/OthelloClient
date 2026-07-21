@@ -7,7 +7,6 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -15,11 +14,6 @@ import java.util.concurrent.Future;
 public final class OthelloClient {
 
     private static final int BOARD_SIZE = 8;
-    private static final String DEFAULT_HOST = "127.0.0.1";
-    private static final int DEFAULT_PORT = 9999;
-    private static final String DEFAULT_NICKNAME = "Player";
-    private static final long DEFAULT_TIME_MILLIS = 8000L;
-
     private final String host;
     private final int port;
     private final String nickname;
@@ -54,7 +48,14 @@ public final class OthelloClient {
         int searchThreads,
         long timeMillis
     ) {
-        this(host, port, nickname, searchThreads, timeMillis, null);
+        this(
+            host,
+            port,
+            nickname,
+            searchThreads,
+            timeMillis,
+            (Path) null
+        );
     }
 
     public OthelloClient(
@@ -65,14 +66,35 @@ public final class OthelloClient {
         long timeMillis,
         Path evaluationModel
     ) {
+        this(
+            host,
+            port,
+            nickname,
+            searchThreads,
+            timeMillis,
+            evaluationModel == null
+                ? new OthelloAI()
+                : new OthelloAI(evaluationModel)
+        );
+    }
+
+    OthelloClient(
+        String host,
+        int port,
+        String nickname,
+        int searchThreads,
+        long timeMillis,
+        OthelloAI ai
+    ) {
+        if (ai == null) {
+            throw new NullPointerException("ai");
+        }
         this.host = host;
         this.port = port;
         this.nickname = nickname;
         this.searchThreads = searchThreads;
         this.timeMillis = timeMillis;
-        this.ai = evaluationModel == null
-            ? new OthelloAI()
-            : new OthelloAI(evaluationModel);
+        this.ai = ai;
         this.searchLimits = new SearchLimits(timeMillis, 64, searchThreads);
         this.searchController = Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "othello-search-control");
@@ -553,68 +575,36 @@ public final class OthelloClient {
     }
 
     public static void main(String[] args) {
-        if (args.length > 6) {
-            printUsage();
-            return;
-        }
-
-        String host = args.length >= 1 ? args[0] : DEFAULT_HOST;
-        int port = DEFAULT_PORT;
-        String nickname = args.length >= 3 ? args[2] : DEFAULT_NICKNAME;
-        int threads = Math.max(
-            1,
-            Runtime.getRuntime().availableProcessors() - 1
-        );
-        long timeMillis = DEFAULT_TIME_MILLIS;
-        Path evaluationModel = args.length >= 6
-            ? Paths.get(args[5])
-            : null;
-
         try {
-            if (args.length >= 2) {
-                port = Integer.parseInt(args[1]);
-            }
-            if (args.length >= 4) {
-                threads = Integer.parseInt(args[3]);
-            }
-            if (args.length >= 5) {
-                timeMillis = Long.parseLong(args[4]);
-            }
-        } catch (NumberFormatException e) {
-            System.err.println("port、threads、timeMillisは整数で指定してください。");
-            printUsage();
-            return;
-        }
-
-        if (host.isEmpty()
-            || port < 1
-            || port > 65535
-            || threads < 1
-            || timeMillis < 1) {
-            System.err.println("起動引数の値が範囲外です。");
-            printUsage();
-            return;
-        }
-
-        System.out.println("サーバに接続を試みます: " + host + ":" + port);
-        try {
+            ClientOptions options = ClientOptions.parse(args);
+            PositionEvaluator evaluator = OthelloAI.loadEvaluator(
+                options.evaluationModel
+            );
+            RuntimeConfiguration runtime = RuntimeConfiguration.resolve(
+                evaluator,
+                options.threadSpec,
+                options.ttSpec
+            );
+            runtime.print(System.out);
+            OthelloAI ai = OthelloAI.create(
+                evaluator,
+                runtime.ttEntries()
+            );
+            System.out.println(
+                "サーバに接続を試みます: "
+                    + options.host + ":" + options.port
+            );
             new OthelloClient(
-                host,
-                port,
-                nickname,
-                threads,
-                timeMillis,
-                evaluationModel
+                options.host,
+                options.port,
+                options.nickname,
+                runtime.threads(),
+                options.timeMillis,
+                ai
             ).start();
         } catch (IllegalArgumentException error) {
             System.err.println(error.getMessage());
+            ClientOptions.printUsage();
         }
-    }
-
-    private static void printUsage() {
-        System.err.println(
-            "使い方: java OthelloClient <host> <port> "
-                + "[nickname] [threads] [timeMillis] [evaluationModel]"
-        );
     }
 }

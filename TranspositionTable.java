@@ -8,6 +8,11 @@ public final class TranspositionTable {
 
     private static final int LOCK_COUNT = 256;
     private static final long FOUND_MASK = Long.MIN_VALUE;
+    private static final long ENTRY_BYTES = 31L;
+    private static final long ARRAY_HEADER_BYTES = 16L;
+    private static final long OBJECT_HEADER_BYTES = 16L;
+    private static final long REFERENCE_BYTES = 8L;
+    private static final int ENTRY_ARRAY_COUNT = 8;
 
     private final long[] players;
     private final long[] opponents;
@@ -39,6 +44,18 @@ public final class TranspositionTable {
             locks[index] = new Object();
         }
         mask = capacity - 1;
+    }
+
+    static long estimatedBytes(int capacity) {
+        if (capacity < 1 || (capacity & (capacity - 1)) != 0) {
+            throw new IllegalArgumentException("capacity must be a power of two");
+        }
+        int lockCount = Math.min(LOCK_COUNT, capacity);
+        return ENTRY_BYTES * capacity
+            + ENTRY_ARRAY_COUNT * ARRAY_HEADER_BYTES
+            + ARRAY_HEADER_BYTES
+            + REFERENCE_BYTES * lockCount
+            + OBJECT_HEADER_BYTES * lockCount;
     }
 
     public synchronized void newSearch() {

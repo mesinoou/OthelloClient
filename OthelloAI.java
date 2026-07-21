@@ -7,21 +7,19 @@ public final class OthelloAI {
     private final OpeningBook openingBook;
 
     public OthelloAI() {
-        this(
-            OpeningBook.loadDefault(),
-            new SearchEngine(
-                LearnedEvaluator.loadDefault(),
-                new TranspositionTable(1 << 18)
-            )
-        );
+        this(LearnedEvaluator.loadDefault(), 1 << 18);
     }
 
     public OthelloAI(Path evaluationModel) {
+        this(loadRequiredEvaluator(evaluationModel), 1 << 18);
+    }
+
+    private OthelloAI(PositionEvaluator evaluator, int ttEntries) {
         this(
             OpeningBook.loadDefault(),
             new SearchEngine(
-                loadRequiredEvaluator(evaluationModel),
-                new TranspositionTable(1 << 18)
+                evaluator,
+                new TranspositionTable(ttEntries)
             )
         );
     }
@@ -85,6 +83,19 @@ public final class OthelloAI {
 
     public void shutdown() {
         searchEngine.shutdown();
+    }
+
+    static OthelloAI create(PositionEvaluator evaluator, int ttEntries) {
+        if (evaluator == null) {
+            throw new NullPointerException("evaluator");
+        }
+        return new OthelloAI(evaluator, ttEntries);
+    }
+
+    static PositionEvaluator loadEvaluator(Path path) {
+        return path == null
+            ? LearnedEvaluator.loadDefault()
+            : loadRequiredEvaluator(path);
     }
 
     private static PositionEvaluator loadRequiredEvaluator(Path path) {
