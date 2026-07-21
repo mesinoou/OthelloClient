@@ -22,6 +22,7 @@ public final class SearchEngine {
     private static final int INFINITY = 1_000_000;
     private static final int STOP_CHECK_MASK = 1023;
     private static final int PARALLEL_MINIMUM_DEPTH = 3;
+    private static final int MINIMUM_TT_DEPTH = 2;
     private static final int LMR_MINIMUM_DEPTH = 5;
     private static final int LMR_MINIMUM_MOVE_INDEX = 4;
     private static final int ENDGAME_FALLBACK_DEPTH = 4;
@@ -383,7 +384,12 @@ public final class SearchEngine {
         checkStop(true, context);
         context.nodes++;
 
-        int tableBestSquare = tableBestSquare(player, opponent, context);
+        int tableBestSquare = tableBestSquare(
+            player,
+            opponent,
+            depth,
+            context
+        );
         long legalMoves = BitBoard.legalMoves(player, opponent);
         int moveCount = prepareMoves(
             player,
@@ -472,7 +478,12 @@ public final class SearchEngine {
         checkStop(true, context);
         context.nodes++;
 
-        int tableBestSquare = tableBestSquare(player, opponent, context);
+        int tableBestSquare = tableBestSquare(
+            player,
+            opponent,
+            depth,
+            context
+        );
         long legalMoves = BitBoard.legalMoves(player, opponent);
         int moveCount = prepareMoves(
             player,
@@ -678,7 +689,7 @@ public final class SearchEngine {
         int originalBeta = beta;
         boolean nullWindow = beta == alpha + 1;
         int tableBestSquare = -1;
-        if (table != null) {
+        if (table != null && ttEligible(depth)) {
             long probe = table.probe(player, opponent);
             if (TranspositionTable.probeFound(probe)) {
                 searchContext.transpositionHits++;
@@ -907,6 +918,10 @@ public final class SearchEngine {
         return !hasUnverifiedReduction || bestScore >= originalBeta;
     }
 
+    static boolean ttEligible(int depth) {
+        return depth >= MINIMUM_TT_DEPTH;
+    }
+
     static boolean lmrEligible(
         int depth,
         int moveIndex,
@@ -1021,9 +1036,10 @@ public final class SearchEngine {
     private int tableBestSquare(
         long player,
         long opponent,
+        int depth,
         SearchContext searchContext
     ) {
-        if (table == null) {
+        if (table == null || !ttEligible(depth)) {
             return -1;
         }
         long probe = table.probe(player, opponent);
@@ -1062,7 +1078,7 @@ public final class SearchEngine {
         byte bound,
         int bestSquare
     ) {
-        if (table != null) {
+        if (table != null && ttEligible(depth)) {
             table.store(
                 player,
                 opponent,
