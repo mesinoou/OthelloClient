@@ -1545,17 +1545,21 @@ public final class SearchEngine {
         if (!lmrEnabled) {
             return 0;
         }
-        int opponentMobility = BitBoard.count(
-            BitBoard.legalMoves(nextOpponent, nextPlayer)
-        );
-        return lmrReduction(
+        long opponentMoves = BitBoard.legalMoves(nextOpponent, nextPlayer);
+        if (!lmrEligible(
             depth,
             moveIndex,
             move,
             empties,
             nullWindow,
-            opponentMobility
-        );
+            opponentMoves != 0L
+        )) {
+            return 0;
+        }
+        if (depth < 8 || moveIndex < 8) {
+            return 1;
+        }
+        return BitBoard.count(opponentMoves) >= 6 ? 2 : 1;
     }
 
     private int prepareMoves(
