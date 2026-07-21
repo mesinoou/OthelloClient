@@ -35,7 +35,7 @@
 | SEARCH-005 | rejected | `benchmark/parallel-v2-20260721` | `codex/aspiration-window` | 反復深化の前回評価値を中心にaspiration windowを適用 | `benchmark/results/search-005-aspiration-window-2026-07-21.md` | 標準4Tでノード4.46%減、別seedで1.19%減、500 ms深さは微減 | 効果が小さく局面依存のため不採用 |
 | SEARCH-006 | accepted | `benchmark/parallel-v2-20260721` | `codex/late-move-reduction` | 後順位の非PV手を浅く探索し、fail-high時だけ全深度で再探索 | `benchmark/results/search-006-late-move-reduction-2026-07-21.md` | 4T深さ9でノード22.04%減、500 ms深さ+0.62、同時点Edax基準比+1.5pt | `baseline/lmr-20260721`として統合 |
 | SEARCH-007 | accepted | `9855a1e` | `codex/shallow-tt-gating` | depth 2未満のTT probe/storeを省略 | `benchmark/results/search-007-shallow-tt-gating-2026-07-21.md` | 4T 500 ms深さ+0.25、Validation時間-3.92%、Depth 10時間-7.81%、不一致0件 | 統合対象 |
-| SEARCH-016 | running | `baseline/shallow-tt-20260721` | `codex/specialized-leaf-search` | 通常探索depth 0/1を専用関数へ分岐 | `benchmark/ALGORITHM_ROADMAP.md` | 測定準備中 | L0-L3、L5で判定 |
+| SEARCH-016 | accepted | `baseline/shallow-tt-20260721` | `codex/specialized-leaf-search` | 通常探索depth 0/1を専用関数へ分岐 | `benchmark/results/search-016-specialized-leaf-search-2026-07-21.md` | 4T固定深さ-29.56%、500 ms深さ+0.44、Validation-31.64%、不一致0件 | 統合対象 |
 | EVAL-001 | planned | latest accepted | `codex/chunked-pattern-index` | byte単位の3進寄与表で学習評価indexを構築 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-007後 |
 | SEARCH-008 | planned | latest accepted | `codex/exact-last-n` | 残り1〜4手を専用終盤solverで探索 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | EVAL-001後 |
 | SEARCH-009 | planned | latest accepted | `codex/two-way-tt` | 同じentry数で2-way bucket TTへ変更 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-008後 |
