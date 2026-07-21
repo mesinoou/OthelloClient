@@ -158,10 +158,10 @@ def main() -> None:
         )
         enabled = (
             slope > 0.0
-            and validation_stats["false_high_rate"] < 0.01
-            and validation_stats["false_low_rate"] < 0.01
-            and holdout_stats["false_high_rate"] < 0.01
-            and holdout_stats["false_low_rate"] < 0.01
+            and validation_conformal["false_high_rate"] <= TAIL_RISK
+            and validation_conformal["false_low_rate"] <= TAIL_RISK
+            and holdout_conformal["false_high_rate"] <= TAIL_RISK
+            and holdout_conformal["false_low_rate"] <= TAIL_RISK
         )
         groups.append(
             {
