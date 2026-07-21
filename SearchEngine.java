@@ -545,9 +545,9 @@ public final class SearchEngine {
                 workerContext
             );
 
-            int currentAlpha = unpackBestScore(sharedBest.get());
-            if (score > currentAlpha) {
+            if (rootProbeFailedHigh(alpha, score)) {
                 workerContext.pvsResearches++;
+                int currentAlpha = unpackBestScore(sharedBest.get());
                 score = searchRootMove(
                     player,
                     opponent,
@@ -568,6 +568,10 @@ public final class SearchEngine {
             completion.finish();
         }
         return new RootMoveResult(aborted);
+    }
+
+    static boolean rootProbeFailedHigh(int probeAlpha, int score) {
+        return score > probeAlpha;
     }
 
     private int searchRootMove(

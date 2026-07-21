@@ -27,7 +27,8 @@
 | BASE-20260721 | frozen | `50313ca` | `feature/learned-evaluation` | CUDA e80学習評価を含む現行基準 | `benchmark/results/learned-e80-2026-07-21.md` | Edax L7 100局で50-1-49 | `baseline/learned-e80-20260721`として固定 |
 | BENCH-001 | infrastructure | `baseline/learned-e80-20260721` | `codex/parallel-benchmark-v1` | 並列探索の再現可能な固定深さ・固定時間計測を追加 | `benchmark/results/parallel-search-v1-2026-07-21.md` | 固定深さ128結果で不一致0件、4T 1.68倍、8T 1.89倍 | 計測基盤として採用、探索動作は変更なし |
 | SEARCH-001 | rejected | `benchmark/parallel-v1-20260721` | `codex/root-parallel-worker-loop` | 指し手単位Futureを固定ワーカーループへ変更し、メインスレッドも参加 | `benchmark/results/search-001-root-worker-loop-2026-07-21.md` | 2Tは26.7%短縮、4Tは2.0%短縮、8Tは10.8%悪化 | 大会用4Tの改善が小さく8T退行のため不採用 |
-| FIX-001 | planned | `benchmark/parallel-v1-20260721` | `codex/root-parallel-research-fix` | 並行中の共有alpha更新後もfail-high手を再探索する | 固定深さ一致、全回帰テスト、BENCH-001 | SEARCH-001の検証中に不一致を検出 | 性能実験より先に正当性修正として分離検証 |
+| FIX-001 | accepted | `benchmark/parallel-v1-20260721` | `codex/root-parallel-research-fix` | 並行中の共有alpha更新後もfail-high手を再探索する | `benchmark/results/fix-001-parallel-research-2026-07-21.md` | 固定深さ448結果で不一致0件、4Tノード約4.9%増 | 正当性修正として採用 |
+| SEARCH-002 | planned | FIX-001統合後 | `codex/transposition-contention` | 置換表の競合を計測し、同期方式または配置を改善 | BENCH-001、固定深さ一致、Edax L7 | pending | 競合計測を先に実装 |
 
 ## Model baseline
 
