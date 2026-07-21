@@ -2,6 +2,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -25,7 +28,7 @@ import java.util.Set;
 
 public final class ParallelSearchBenchmark {
 
-    private static final String BENCHMARK_VERSION = "parallel-search-v1";
+    private static final String BENCHMARK_VERSION = "parallel-search-v2";
     private static final int MIN_POSITION_PLY = 16;
     private static final int MAX_POSITION_PLY = 32;
     private static final int PRIME_DEPTH = 3;
@@ -38,6 +41,7 @@ public final class ParallelSearchBenchmark {
     private final String suiteSha256;
     private final String generatedAtUtc;
     private final String gitRevision;
+    private final ThreadMXBean contentionBean;
     private final Map<String, Aggregate> aggregates = new LinkedHashMap<>();
 
     private PrintWriter output;
@@ -57,6 +61,7 @@ public final class ParallelSearchBenchmark {
         suiteSha256 = hashPositions(positions);
         generatedAtUtc = Instant.now().toString();
         gitRevision = gitRevision();
+        contentionBean = createContentionBean(config.contentionMetrics);
     }
 
     public static void main(String[] args) throws Exception {
@@ -161,6 +166,8 @@ public final class ParallelSearchBenchmark {
             "workerShare",
             "parallelTasks",
             "parallelWorkerNodes",
+            "workerMonitorBlocks",
+            "workerMonitorBlockedMillis",
             "transpositionHits",
             "betaCutoffs",
             "pvsResearches",
@@ -224,11 +231,13 @@ public final class ParallelSearchBenchmark {
                         ) % config.threads.size();
                         int threads = config.threads.get(threadIndex);
                         PositionToMove sample = positions.get(positionIndex);
-                        SearchResult result = engines.get(threads).search(
+                        SearchMeasurement measurement = measuredSearch(
+                            engines.get(threads),
                             sample.position,
                             sample.color,
                             new SearchLimits(timeMillis, depth, threads)
                         );
+                        SearchResult result = measurement.result;
                         validateLegalMove(sample, result);
 
                         boolean consistent = true;
@@ -266,9 +275,10 @@ public final class ParallelSearchBenchmark {
                             depth,
                             timeMillis,
                             result,
+                            measurement,
                             expected == null ? "" : Boolean.toString(consistent)
                         );
-                        aggregate(mode, threads).add(result);
+                        aggregate(mode, threads).add(result, measurement);
                     }
                 }
             } finally {
@@ -330,7 +340,40 @@ public final class ParallelSearchBenchmark {
             1,
             new SearchLimits(30_000L, PRIME_DEPTH, threads)
         );
+        engine.prestartWorkerThreads();
         return engine;
+    }
+
+    private SearchMeasurement measuredSearch(
+        SearchEngine engine,
+        BitBoardPosition position,
+        int color,
+        SearchLimits limits
+    ) {
+        MonitorSnapshot before = monitorSnapshot(engine);
+        SearchResult result = engine.search(position, color, limits);
+        MonitorSnapshot after = monitorSnapshot(engine);
+        return new SearchMeasurement(
+            result,
+            Math.max(0L, after.blockedCount - before.blockedCount),
+            Math.max(0L, after.blockedMillis - before.blockedMillis)
+        );
+    }
+
+    private MonitorSnapshot monitorSnapshot(SearchEngine engine) {
+        if (contentionBean == null) {
+            return MonitorSnapshot.ZERO;
+        }
+        long blockedCount = 0L;
+        long blockedMillis = 0L;
+        for (Thread worker : engine.workerThreadsSnapshot()) {
+            ThreadInfo info = contentionBean.getThreadInfo(worker.getId());
+            if (info != null) {
+                blockedCount += info.getBlockedCount();
+                blockedMillis += Math.max(0L, info.getBlockedTime());
+            }
+        }
+        return new MonitorSnapshot(blockedCount, blockedMillis);
     }
 
     private void writeResult(
@@ -342,6 +385,7 @@ public final class ParallelSearchBenchmark {
         int depth,
         long timeMillis,
         SearchResult result,
+        SearchMeasurement measurement,
         String consistent
     ) {
         long elapsedNanos = Math.max(1L, result.elapsedNanos());
@@ -385,6 +429,8 @@ public final class ParallelSearchBenchmark {
             formatDouble(workerShare),
             Integer.toString(result.parallelTasks()),
             join(result.parallelWorkerNodes()),
+            Long.toString(measurement.workerMonitorBlocks),
+            Long.toString(measurement.workerMonitorBlockedMillis),
             Long.toString(result.transpositionHits()),
             Long.toString(result.betaCutoffs()),
             Long.toString(result.pvsResearches()),
@@ -396,7 +442,7 @@ public final class ParallelSearchBenchmark {
     private void printSummary() {
         System.err.println(
             "mode threads samples avgDepth avgMillis nodesPerSecond "
-                + "workerShare fixedSpeedup"
+                + "workerShare monitorBlocks blockedMillis fixedSpeedup"
         );
         Aggregate fixedBaseline = aggregates.get("fixed:1");
         for (Aggregate aggregate : aggregates.values()) {
@@ -408,7 +454,7 @@ public final class ParallelSearchBenchmark {
             }
             System.err.printf(
                 Locale.ROOT,
-                "%s %d %d %.2f %.3f %.0f %.3f %s%n",
+                "%s %d %d %.2f %.3f %.0f %.3f %d %d %s%n",
                 aggregate.mode,
                 aggregate.threads,
                 aggregate.samples,
@@ -416,6 +462,8 @@ public final class ParallelSearchBenchmark {
                 aggregate.averageMillis(),
                 aggregate.nodesPerSecond(),
                 aggregate.workerShare(),
+                aggregate.workerMonitorBlocks,
+                aggregate.workerMonitorBlockedMillis,
                 speedup
             );
         }
@@ -605,6 +653,22 @@ public final class ParallelSearchBenchmark {
         }
     }
 
+    private static ThreadMXBean createContentionBean(boolean enabled) {
+        if (!enabled) {
+            return null;
+        }
+        ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+        if (!bean.isThreadContentionMonitoringSupported()) {
+            throw new IllegalStateException(
+                "thread contention monitoring is not supported"
+            );
+        }
+        if (!bean.isThreadContentionMonitoringEnabled()) {
+            bean.setThreadContentionMonitoringEnabled(true);
+        }
+        return bean;
+    }
+
     private static String commandOutput(String... command)
         throws IOException, InterruptedException {
         Process process = new ProcessBuilder(command)
@@ -661,6 +725,7 @@ public final class ParallelSearchBenchmark {
         private int warmups = 1;
         private long seed = 20260721L;
         private int transpositionCapacity = 1 << 18;
+        private boolean contentionMetrics;
         private boolean overwrite;
         private boolean help;
 
@@ -678,6 +743,8 @@ public final class ParallelSearchBenchmark {
                     config.outputPath = Paths.get(value(args, ++index, option));
                 } else if ("--overwrite".equals(option)) {
                     config.overwrite = true;
+                } else if ("--contention-metrics".equals(option)) {
+                    config.contentionMetrics = true;
                 } else if ("--mode".equals(option)) {
                     config.mode = Mode.parse(value(args, ++index, option));
                 } else if ("--threads".equals(option)) {
@@ -754,6 +821,7 @@ public final class ParallelSearchBenchmark {
             stream.println("  --seed N                 position seed (default 20260721)");
             stream.println("  --tt-capacity N          power-of-two entries (default 262144)");
             stream.println("  --output PATH            write detailed CSV to PATH");
+            stream.println("  --contention-metrics     record worker monitor blocking");
             stream.println("  --overwrite              replace an existing output file");
         }
 
@@ -854,6 +922,36 @@ public final class ParallelSearchBenchmark {
         }
     }
 
+    private static final class SearchMeasurement {
+
+        private final SearchResult result;
+        private final long workerMonitorBlocks;
+        private final long workerMonitorBlockedMillis;
+
+        private SearchMeasurement(
+            SearchResult result,
+            long workerMonitorBlocks,
+            long workerMonitorBlockedMillis
+        ) {
+            this.result = result;
+            this.workerMonitorBlocks = workerMonitorBlocks;
+            this.workerMonitorBlockedMillis = workerMonitorBlockedMillis;
+        }
+    }
+
+    private static final class MonitorSnapshot {
+
+        private static final MonitorSnapshot ZERO = new MonitorSnapshot(0L, 0L);
+
+        private final long blockedCount;
+        private final long blockedMillis;
+
+        private MonitorSnapshot(long blockedCount, long blockedMillis) {
+            this.blockedCount = blockedCount;
+            this.blockedMillis = blockedMillis;
+        }
+    }
+
     private static final class Aggregate {
 
         private final String mode;
@@ -864,18 +962,26 @@ public final class ParallelSearchBenchmark {
         private long elapsedNanos;
         private long nodes;
         private long parallelNodes;
+        private long workerMonitorBlocks;
+        private long workerMonitorBlockedMillis;
 
         private Aggregate(String mode, int threads) {
             this.mode = mode;
             this.threads = threads;
         }
 
-        private void add(SearchResult result) {
+        private void add(
+            SearchResult result,
+            SearchMeasurement measurement
+        ) {
             samples++;
             completedDepth += result.completedDepth();
             elapsedNanos += result.elapsedNanos();
             nodes += result.nodes();
             parallelNodes += result.parallelNodes();
+            workerMonitorBlocks += measurement.workerMonitorBlocks;
+            workerMonitorBlockedMillis +=
+                measurement.workerMonitorBlockedMillis;
         }
 
         private double averageDepth() {
