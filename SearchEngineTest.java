@@ -172,23 +172,26 @@ public final class SearchEngineTest {
 
     private static void testLateMoveReductionEligibility() {
         long ordinaryMove = 1L << 20;
-        if (!SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, true)) {
+        if (!SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, true, true)) {
             throw new AssertionError("LMR対象手を除外しています。");
         }
-        if (SearchEngine.lmrEligible(4, 4, ordinaryMove, 19, true)) {
+        if (SearchEngine.lmrEligible(4, 4, ordinaryMove, 19, true, true)) {
             throw new AssertionError("浅い探索でLMRを適用しています。");
         }
-        if (SearchEngine.lmrEligible(5, 3, ordinaryMove, 19, true)) {
+        if (SearchEngine.lmrEligible(5, 3, ordinaryMove, 19, true, true)) {
             throw new AssertionError("上位手へLMRを適用しています。");
         }
-        if (SearchEngine.lmrEligible(5, 4, 1L, 19, true)) {
+        if (SearchEngine.lmrEligible(5, 4, 1L, 19, true, true)) {
             throw new AssertionError("隅へLMRを適用しています。");
         }
-        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 18, true)) {
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 18, true, true)) {
             throw new AssertionError("終盤探索でLMRを適用しています。");
         }
-        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, false)) {
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, true, false)) {
             throw new AssertionError("パスを発生させる手へLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, false, true)) {
+            throw new AssertionError("PVノードでLMRを適用しています。");
         }
     }
 

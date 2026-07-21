@@ -673,6 +673,7 @@ public final class SearchEngine {
 
         int originalAlpha = alpha;
         int originalBeta = beta;
+        boolean nullWindow = beta == alpha + 1;
         int tableBestSquare = -1;
         if (table != null) {
             long probe = table.probe(player, opponent);
@@ -803,6 +804,7 @@ public final class SearchEngine {
                     index,
                     move,
                     empties,
+                    nullWindow,
                     nextPlayer,
                     nextOpponent
                 );
@@ -884,12 +886,14 @@ public final class SearchEngine {
         int moveIndex,
         long move,
         int empties,
+        boolean nullWindow,
         boolean opponentHasMove
     ) {
         return depth >= LMR_MINIMUM_DEPTH
             && moveIndex >= LMR_MINIMUM_MOVE_INDEX
             && (move & CORNERS) == 0L
             && empties > MAX_ENDGAME_THRESHOLD
+            && nullWindow
             && opponentHasMove;
     }
 
@@ -898,6 +902,7 @@ public final class SearchEngine {
         int moveIndex,
         long move,
         int empties,
+        boolean nullWindow,
         long nextPlayer,
         long nextOpponent
     ) {
@@ -906,6 +911,7 @@ public final class SearchEngine {
             moveIndex,
             move,
             empties,
+            nullWindow,
             true
         )) {
             return false;
