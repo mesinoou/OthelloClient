@@ -704,46 +704,6 @@ public final class SearchEngine {
         if (ply >= SearchContext.MAX_PLY) {
             return evaluator.evaluate(player, opponent);
         }
-        if (depth >= 2
-            && depth <= 4
-            && exactLastNSolverEnabled
-            && exactLastNEligible(
-            depth,
-            BitBoard.countEmpty(player, opponent)
-        )) {
-            long empty = ~(player | opponent);
-            if (depth == 4) {
-                return solve4(
-                    player,
-                    opponent,
-                    empty,
-                    alpha,
-                    beta,
-                    false,
-                    searchContext
-                );
-            }
-            if (depth == 3) {
-                return solve3(
-                    player,
-                    opponent,
-                    empty,
-                    alpha,
-                    beta,
-                    false,
-                    searchContext
-                );
-            }
-            return solve2(
-                player,
-                opponent,
-                empty,
-                alpha,
-                beta,
-                false,
-                searchContext
-            );
-        }
         if (specializedLeafDepth(depth)) {
             return searchLeaf(
                 player,
@@ -781,6 +741,45 @@ public final class SearchEngine {
                         return tableValue;
                     }
                 }
+            }
+        }
+
+        int empties = -1;
+        if (depth <= 4 && exactLastNSolverEnabled) {
+            empties = BitBoard.countEmpty(player, opponent);
+            if (exactLastNEligible(depth, empties)) {
+                long empty = ~(player | opponent);
+                if (depth == 4) {
+                    return solve4(
+                        player,
+                        opponent,
+                        empty,
+                        alpha,
+                        beta,
+                        false,
+                        searchContext
+                    );
+                }
+                if (depth == 3) {
+                    return solve3(
+                        player,
+                        opponent,
+                        empty,
+                        alpha,
+                        beta,
+                        false,
+                        searchContext
+                    );
+                }
+                return solve2(
+                    player,
+                    opponent,
+                    empty,
+                    alpha,
+                    beta,
+                    false,
+                    searchContext
+                );
             }
         }
 
@@ -833,7 +832,9 @@ public final class SearchEngine {
             return value;
         }
 
-        int empties = BitBoard.countEmpty(player, opponent);
+        if (empties < 0) {
+            empties = BitBoard.countEmpty(player, opponent);
+        }
         if (empties == 1) {
             long move = legalMoves & -legalMoves;
             long flips = BitBoard.flips(player, opponent, move);
