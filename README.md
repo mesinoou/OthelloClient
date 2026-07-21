@@ -55,6 +55,20 @@ java -cp .build OthelloClient 127.0.0.1 25033 Player 4 8000 `
 java -cp .build EdaxOthelloClient 127.0.0.1 25033 Edax46L6 6 1
 ```
 
+評価関数を再現可能な複数局で比較する場合は`EvaluationMatchRunner`を使用する。定石を無効にし、固定シードから生成した8手オープニングごとに学習評価の先後を交換する。
+
+```powershell
+# 同一探索時間で従来評価と20局
+java -cp .build EvaluationMatchRunner `
+  data/evaluation-tables.bin handcrafted 10 8 100 64 1
+
+# Edax 4.6 level 6と20局
+java -cp .build EvaluationMatchRunner `
+  data/evaluation-tables.bin edax 10 8 100 64 1 6
+```
+
+引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
+
 ## テスト
 
 ビルド後、次の回帰テストを実行する。
