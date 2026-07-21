@@ -1,10 +1,29 @@
+import java.io.IOException;
+import java.nio.file.Path;
+
 public final class OthelloAI {
 
     private final SearchEngine searchEngine;
     private final OpeningBook openingBook;
 
     public OthelloAI() {
-        this(OpeningBook.loadDefault(), new SearchEngine());
+        this(
+            OpeningBook.loadDefault(),
+            new SearchEngine(
+                LearnedEvaluator.loadDefault(),
+                new TranspositionTable(1 << 18)
+            )
+        );
+    }
+
+    public OthelloAI(Path evaluationModel) {
+        this(
+            OpeningBook.loadDefault(),
+            new SearchEngine(
+                loadRequiredEvaluator(evaluationModel),
+                new TranspositionTable(1 << 18)
+            )
+        );
     }
 
     OthelloAI(OpeningBook openingBook, SearchEngine searchEngine) {
@@ -56,11 +75,26 @@ public final class OthelloAI {
         return openingBook.maximumPly();
     }
 
+    public String evaluatorDescription() {
+        return searchEngine.evaluatorDescription();
+    }
+
     public void stop() {
         searchEngine.stop();
     }
 
     public void shutdown() {
         searchEngine.shutdown();
+    }
+
+    private static PositionEvaluator loadRequiredEvaluator(Path path) {
+        try {
+            return LearnedEvaluator.load(path);
+        } catch (IOException error) {
+            throw new IllegalArgumentException(
+                "学習済み評価モデルを読み込めません: " + error.getMessage(),
+                error
+            );
+        }
     }
 }

@@ -1,4 +1,4 @@
-public final class Evaluator {
+public final class Evaluator implements PositionEvaluator {
 
     public static final int WIN_SCORE = 100_000;
 
@@ -13,6 +13,7 @@ public final class Evaluator {
     private static final int[] C_SQUARES_A = {1, 6, 48, 55};
     private static final int[] C_SQUARES_B = {8, 15, 57, 62};
 
+    @Override
     public int evaluate(long player, long opponent) {
         long occupied = player | opponent;
         int empties = BitBoard.countEmpty(player, opponent);
@@ -97,6 +98,7 @@ public final class Evaluator {
         return score;
     }
 
+    @Override
     public int terminalScore(long player, long opponent) {
         int difference = BitBoard.count(player) - BitBoard.count(opponent);
         if (difference > 0) {
@@ -106,6 +108,11 @@ public final class Evaluator {
             return -WIN_SCORE + difference;
         }
         return 0;
+    }
+
+    @Override
+    public String description() {
+        return "handcrafted-v0.1.0";
     }
 
     static int cornerContextScore(
@@ -300,7 +307,7 @@ public final class Evaluator {
         return (board & bit) == 0L ? 0 : 1;
     }
 
-    private static long neighbors(long board) {
+    static long neighbors(long board) {
         long eastWest = ((board & ~H_FILE) << 1)
             | ((board & ~A_FILE) >>> 1);
         long vertical = (board << 8) | (board >>> 8);
