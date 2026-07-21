@@ -807,6 +807,10 @@ public final class SearchEngine {
             }
             if (alpha >= beta) {
                 searchContext.betaCutoffs++;
+                searchContext.rewardHistory(
+                    Long.numberOfTrailingZeros(move),
+                    depth
+                );
                 break;
             }
         }
@@ -853,6 +857,8 @@ public final class SearchEngine {
             int opponentMobility = BitBoard.count(opponentMoves);
 
             int priority = -100 * opponentMobility + BitBoard.count(flips);
+            priority += searchContext.history[square]
+                / SearchContext.HISTORY_PRIORITY_DIVISOR;
             if (endgameOrdering) {
                 if ((move & oddRegions) != 0L) {
                     priority += ODD_REGION_BONUS;
