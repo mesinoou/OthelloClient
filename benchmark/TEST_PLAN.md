@@ -141,6 +141,25 @@ java -cp .build EvaluationMatchRunner `
 
 大会前の最終候補では、実サーバを`-timeout 10 -debug -trans`で起動し、通信クライアント同士で最低2局完走させる。長時間の棋力確認が必要な場合は別計算機で10秒条件20局以上を実行する。
 
+#### RUNTIME-001 configuration gate
+
+- `-XX:ActiveProcessorCount=1,2,4,8`と`-Xmx64m,256m,1g`を組み合わせたsubprocess testを行う。
+- auto選択値がlogical processor数、8 threads、TT memory budgetを超えないことを確認する。
+- 明示threads、CLI TT、system property TTがそれぞれauto診断を正しく上書きすることを確認する。
+- profile開始から設定確定まで2,000 ms以下、OOMとfallback後の起動失敗0件を必須とする。
+- 診断用TTが実戦用TTへ混入せず、固定設定のbenchmark結果が変更されないことを確認する。
+- 現PCとLinux本番機でauto構成と固定4Tを比較し、平均完了深さの明確な悪化があれば不採用とする。
+
+#### CLIENT-001 ponder gate
+
+- mock serverの相手待ち時間`0/50/500/2000/8000 ms`で、ponder開始・停止・自手探索handoffを確認する。
+- 自分の`PUT`後、更新済み`BOARD`受信前のponder開始0件を必須とする。
+- 相手手番PUT、二重PUT、違法手、停止後の遅延PUT、unfinished searchをすべて0件とする。
+- changed `BOARD`受信からponder終了までのp95 latencyを50 ms未満とする。
+- ponderあり・なしを同一opening、同一相手待ち時間で100局比較し、スコア率5 point超の低下、平均石差と到達深さの同時悪化がないことを確認する。
+- `--ponder off`で既存通信・探索動作と一致し、通常の固定探索benchmarkへponderが混入しないことを確認する。
+- 最終候補は実サーバ`-timeout 10 -debug -trans`、4 threads、`--ponder on`で先後2局以上を完走する。
+
 ### L6: Model and opening data
 
 評価モデル、学習データ、特徴量、定石を変更した場合だけ追加する。

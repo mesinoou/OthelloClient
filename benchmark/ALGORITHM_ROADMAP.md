@@ -2,7 +2,7 @@
 
 ## Goal
 
-現在の`baseline/lmr-20260721`から、1実験につき1つの探索仮説だけを追加し、`benchmark/TEST_PLAN.md`の停止条件に従って採否を決める。実施順は、探索結果を変えない低リスクな高速化、正確な枝刈り、選択的探索、並列探索の順とする。
+現在の`baseline/multi-probcut-20260721`から、1実験につき1つの探索仮説だけを追加し、`benchmark/TEST_PLAN.md`の停止条件に従って採否を決める。実施順は、探索結果を変えない低リスクな高速化、正確な枝刈り、選択的探索、実行環境適応、相手手番探索、並列探索の順とする。
 
 過去に単独で不採用となったhistory heuristic、killer heuristic、aspiration windowは再実装しない。null-move pruningは、パスがありzugzwang的な局面も生じるOthelloでは安全性を保証しにくいため候補外とする。
 
@@ -28,10 +28,10 @@
 | 5 | SEARCH-009 | Two-way bucket transposition table | 衝突削減とTT hit増加 | none | L0-L3, L5, L7 |
 | 6 | SEARCH-010 | Enhanced Transposition Cutoff | 子局面TT boundによる枝刈り | none | L0-L3, L5, L7 |
 | 7 | SEARCH-011 | Stability bound cutoff | 終盤の安全なwindow縮小 | none | L0-L3, L5, L7 |
-| 8 | RUNTIME-001 | Environment profiling and auto-sizing | 本番CPU・heapへの適応 | configuration | L0, L1, L3, L5, L7 |
-| 9 | CLIENT-001 | Opponent-turn pondering | 相手思考時間で共有TTを予熱 | timing | L0, L1, L4, L5, L7 |
-| 10 | SEARCH-012 | Adaptive LMR | 後順位の低価値手を追加削減 | selective | L0-L5, L7 |
-| 11 | SEARCH-013 | Calibrated Multi-ProbCut | 統計的な浅い探索による枝刈り | selective | L0-L6, L7 |
+| 8 | SEARCH-012 | Adaptive LMR | 後順位の低価値手を追加削減 | selective | L0-L5, L7 |
+| 9 | SEARCH-013 | Calibrated Multi-ProbCut | 統計的な浅い探索による枝刈り | selective | L0-L6, L7 |
+| 10 | RUNTIME-001 | Environment profiling and auto-sizing | 本番CPU・heapへの適応 | configuration | L0, L1, L3, L5, L7 |
+| 11 | CLIENT-001 | Opponent-turn pondering | 相手思考時間で共有TTを予熱 | timing | L0, L1, L4, L5, L7 |
 | 12 | SEARCH-014 | Interior YBWC split points | 不均衡な部分木で4T利用率向上 | scheduling | L0-L5, L7 |
 | 13 | SEARCH-015 | Timed-search Lazy SMP helper | 反復深化中のTT先行生成 | selective scheduling | L0-L5, L7 |
 
@@ -240,6 +240,20 @@ threadCandidates = powersOfTwoUpTo(min(logicalProcessors, 8))
 
 `threads=auto`のときだけ、接続前の固定局面で候補thread数を短時間測定し、500 ms相当の到達深さ、同深さならelapsed timeで選ぶ。測定上限は合計2秒とする。数値を明示した場合は必ずその値を優先し、自動調整を無効化する。TT容量はCLIまたはsystem propertyで上書き可能にする。
 
+### Frozen implementation contract (2026-07-22)
+
+- Baseは`baseline/multi-probcut-20260721`、実験branchは`codex/runtime-auto-sizing`とする。
+- 自動調整対象は総探索thread数とTT entry数だけとする。思考時間、完全読み閾値、評価関数、定石、LMR、MPC係数は変更しない。
+- 既存の第4位置引数は正整数に加えて`auto`を受け付け、省略時も`auto`とする。正整数を指定した場合はthread測定を実行しない。
+- TTは`--tt auto|N`で指定する。優先順位はCLI、`othello.tt.entries` system property、自動算出の順とする。`N`は2の累乗だけを許可する。
+- 自動TT予算は`maxHeap / 16`を基本とし、8 MiB以上、128 MiB以下、かつ`maxHeap / 4`以下に制限する。現行配列構成の概算31 bytes/entryと配列headerを含め、予算内に収まる最大の2の累乗を選ぶ。
+- thread候補はlogical processor数以下の`1,2,4,8`とする。候補が同等なら少ないthreadを選び、通信処理とOSへ余裕を残す。
+- 診断は固定した中盤局面、定石なし、最終TTとは別の一時engine/tableで行う。JIT warmupを含む全診断のwall timeを2,000 ms以下に制限し、診断TTを実戦へ持ち込まない。
+- 順位は完了深度、同深度なら固定深さelapsed time、差が5%未満なら少ないthreadの順とする。
+- 診断失敗時は`min(4, logicalProcessors)` threadsと`2^18` entriesへfallbackし、理由を標準エラーへ出す。
+- 起動時にprofile、全候補測定値、採用値、TT推定bytes、各値がautoかexplicitかを表示する。
+- `ParallelSearchBenchmark`、`EvaluationMatchRunner`などの正式測定APIには自動設定を入れず、明示されたthreadsとTTを維持する。
+
 ### Decision data
 
 - 起動時にprofile、候補測定値、採用threads、TT entry数、推定TT bytesを表示
@@ -267,6 +281,20 @@ on changed BOARD, own TURN, END, ERROR, or CLOSE:
 ```
 
 `OthelloAI`の同じ`SearchEngine`をsingle search controller上で使い、探索間でTTだけを保持する。定石が見つかってもponderを即終了せず、通常探索を行って定石後の部分木を生成する。自手番の着手は従来のauthoritative searchだけが送信する。
+
+### Frozen implementation contract (2026-07-22)
+
+- Baseは採用済みRUNTIME-001、実験branchは`codex/opponent-turn-pondering`とする。RUNTIME-001が不採用なら`baseline/multi-probcut-20260721`から分岐する。
+- `--ponder on|off`を追加し、初期実装と最初の統合では既定値を`off`とする。大会起動例では明示的に`--ponder on`を指定する。既定値変更は別の決定として扱う。
+- `--ponder-ratio R`の初期値を`0.80`、許容範囲を`0 < R <= 1`とする。ponder budgetは`min(8000 ms, floor(ownMoveBudget * R))`とし、計算機診断でこの比率を変更しない。
+- ponder threadsはauthoritative searchと同じ採用thread数を使う。ponder専用thread増減は初回実験へ含めない。
+- 自分の`PUT`送信直後は盤面をstaleとし、サーバから更新済み`BOARD`を受信するまでponderを開始しない。古い盤面から自分の着手を推測適用する処理は入れない。
+- 最新`BOARD`と相手色の`TURN`がそろった場合だけ相手視点で通常探索を開始する。盤面が未受信またはstaleなら`BOARD`を要求し、探索しない。
+- ponderはopening bookを迂回する専用入口から`SearchEngine.search`を呼び、結果の手は記録だけして破棄する。ネットワーク送信権限はauthoritative searchだけが持つ。
+- changed `BOARD`、own `TURN`、`END`、`ERROR`、`CLOSE`でstopを要求する。既存single-thread search controllerと同期化された`SearchEngine.search`により、ponder停止後だけauthoritative searchを開始する。
+- 探索間で再利用するのは同じTransposition Tableだけとし、root result、deadline、stop state、探索counterは毎回初期化する。
+- 開始数、完了数、中断数、時間、node、深さ、予測相手手一致率、handoff latency、自手探索の初期TT hit、誤PUT数を記録する。
+- MPCを含むTT boundの再利用、誤予測によるTT汚染、連続CPU使用によるclock低下は対局gateで判定し、悪化時のratio/thread調整は別実験IDに分ける。
 
 ### Decision data
 
