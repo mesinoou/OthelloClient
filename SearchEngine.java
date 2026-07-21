@@ -34,6 +34,7 @@ public final class SearchEngine {
     private final boolean endgameOrderingEnabled;
     private final int endgameThresholdOverride;
     private final boolean lmrEnabled;
+    private final boolean exactLastNSolverEnabled;
     private final SearchContext context = new SearchContext();
     private final ThreadLocal<SearchContext> workerContexts =
         ThreadLocal.withInitial(SearchContext::new);
@@ -49,6 +50,7 @@ public final class SearchEngine {
     private ExecutorService workerPool;
     private int workerThreadCount;
     private long deadlineNanos;
+    private boolean exactSearchActive;
 
     public SearchEngine() {
         this(new Evaluator(), new TranspositionTable(1 << 18));
@@ -88,6 +90,24 @@ public final class SearchEngine {
         int endgameThresholdOverride,
         boolean lmrEnabled
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
@@ -100,6 +120,7 @@ public final class SearchEngine {
         }
         this.endgameThresholdOverride = endgameThresholdOverride;
         this.lmrEnabled = lmrEnabled;
+        this.exactLastNSolverEnabled = exactLastNSolverEnabled;
     }
 
     public String evaluatorDescription() {
@@ -159,6 +180,7 @@ public final class SearchEngine {
     ) {
         stopRequested.set(false);
         timedOut.set(false);
+        exactSearchActive = false;
         activeTasks.clear();
         context.reset();
         parallelMetrics.reset();
@@ -240,6 +262,7 @@ public final class SearchEngine {
             }
 
             if (endgameSearch) {
+                exactSearchActive = true;
                 if (rootPass) {
                     searchPassedRoot(player, opponent, emptyCount);
                 } else if (shouldSearchParallel(
@@ -271,6 +294,7 @@ public final class SearchEngine {
         } catch (SearchAbortedException ignored) {
             aborted = true;
         } finally {
+            exactSearchActive = false;
             cancelActiveTasks();
             activeTasks.clear();
         }
@@ -354,7 +378,7 @@ public final class SearchEngine {
     ) {
         checkStop(true, context);
         context.nodes++;
-        int score = -pvs(
+        int score = -searchRootChild(
             opponent,
             player,
             depth,
@@ -416,7 +440,7 @@ public final class SearchEngine {
 
             int score;
             if (index == 0) {
-                score = -pvs(
+                score = -searchRootChild(
                     nextOpponent,
                     nextPlayer,
                     depth - 1,
@@ -428,7 +452,7 @@ public final class SearchEngine {
                 firstMoveScore = score;
             } else {
                 int probeAlpha = lmrEnabled ? firstMoveScore : alpha;
-                score = -pvs(
+                score = -searchRootChild(
                     nextOpponent,
                     nextPlayer,
                     depth - 1,
@@ -439,7 +463,7 @@ public final class SearchEngine {
                 );
                 if (score > probeAlpha && score < beta) {
                     context.pvsResearches++;
-                    score = -pvs(
+                    score = -searchRootChild(
                         nextOpponent,
                         nextPlayer,
                         depth - 1,
@@ -638,13 +662,47 @@ public final class SearchEngine {
         long flips = BitBoard.flips(player, opponent, move);
         long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
         long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
-        return -pvs(
+        return -searchRootChild(
             nextOpponent,
             nextPlayer,
             depth - 1,
             -beta,
             -alpha,
             1,
+            searchContext
+        );
+    }
+
+    private int searchRootChild(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        int ply,
+        SearchContext searchContext
+    ) {
+        if (depth >= 2
+            && depth <= 4
+            && exactSearchActive
+            && exactLastNSolverEnabled) {
+            countExactNode(searchContext);
+            return solveExactLastN(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
+        }
+        return pvs(
+            player,
+            opponent,
+            depth,
+            alpha,
+            beta,
+            ply,
             searchContext
         );
     }
@@ -722,6 +780,17 @@ public final class SearchEngine {
                     }
                 }
             }
+        }
+
+        if (depth == 4 && exactSearchActive && exactLastNSolverEnabled) {
+            return solveExactLastN(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
         }
 
         long legalMoves = BitBoard.legalMoves(player, opponent);
@@ -922,6 +991,264 @@ public final class SearchEngine {
         return bestScore;
     }
 
+    private int solveExactLastN(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        SearchContext searchContext
+    ) {
+        long empty = ~(player | opponent);
+        if (depth == 4) {
+            return solve4(
+                player,
+                opponent,
+                empty,
+                alpha,
+                beta,
+                false,
+                searchContext
+            );
+        }
+        if (depth == 3) {
+            return solve3(
+                player,
+                opponent,
+                empty,
+                alpha,
+                beta,
+                false,
+                searchContext
+            );
+        }
+        return solve2(
+            player,
+            opponent,
+            empty,
+            alpha,
+            beta,
+            false,
+            searchContext
+        );
+    }
+
+    private int solve4(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        int bestScore = -INFINITY;
+        boolean hasLegalMove = false;
+        long oddMoves = EndgameRegionAnalyzer.oddRegionMask(empty) & empty;
+        long remaining = oddMoves != 0L ? oddMoves : empty;
+        long deferred = empty & ~remaining;
+
+        while (remaining != 0L || deferred != 0L) {
+            if (remaining == 0L) {
+                remaining = deferred;
+                deferred = 0L;
+            }
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            if (flips == 0L) {
+                continue;
+            }
+            hasLegalMove = true;
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            countExactNode(searchContext);
+            int score = -solve3(
+                nextOpponent,
+                nextPlayer,
+                empty ^ move,
+                -beta,
+                -alpha,
+                false,
+                searchContext
+            );
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                return bestScore;
+            }
+        }
+        if (hasLegalMove) {
+            return bestScore;
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve4(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private int solve3(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        int bestScore = -INFINITY;
+        boolean hasLegalMove = false;
+        long remaining = empty;
+        while (remaining != 0L) {
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            if (flips == 0L) {
+                continue;
+            }
+            hasLegalMove = true;
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            countExactNode(searchContext);
+            int score = -solve2(
+                nextOpponent,
+                nextPlayer,
+                empty ^ move,
+                -beta,
+                -alpha,
+                false,
+                searchContext
+            );
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                return bestScore;
+            }
+        }
+        if (hasLegalMove) {
+            return bestScore;
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve3(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private int solve2(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        int bestScore = -INFINITY;
+        boolean hasLegalMove = false;
+        long remaining = empty;
+        while (remaining != 0L) {
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            if (flips == 0L) {
+                continue;
+            }
+            hasLegalMove = true;
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            countExactNode(searchContext);
+            int score = -solve1(
+                nextOpponent,
+                nextPlayer,
+                empty ^ move,
+                -beta,
+                -alpha,
+                false,
+                searchContext
+            );
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                return bestScore;
+            }
+        }
+        if (hasLegalMove) {
+            return bestScore;
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve2(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private int solve1(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        long move = empty & -empty;
+        long flips = BitBoard.flips(player, opponent, move);
+        if (flips != 0L) {
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            return -evaluator.terminalScore(nextOpponent, nextPlayer);
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve1(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private void countExactNode(SearchContext searchContext) {
+        searchContext.nodes++;
+        if ((searchContext.nodes & STOP_CHECK_MASK) == 0L) {
+            checkStop(false, searchContext);
+        }
+    }
+
     private int searchLeaf(
         long player,
         long opponent,
@@ -1002,6 +1329,10 @@ public final class SearchEngine {
 
     static boolean specializedLeafDepth(int depth) {
         return depth <= 1;
+    }
+
+    static boolean exactLastNEligible(int depth, int empties) {
+        return depth >= 2 && depth <= 4 && depth == empties;
     }
 
     static boolean lmrBoundCanBeStored(

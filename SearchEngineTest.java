@@ -12,6 +12,9 @@ public final class SearchEngineTest {
         testEndgameThresholdSelection();
         testTranspositionTableDepthGate();
         testSpecializedLeafSearch();
+        testExactLastNSolverEligibility();
+        testExactLastNSolverMatchesGeneric();
+        testExactLastNSolverEdgeCases();
         testTranspositionTableConsistency();
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
@@ -63,6 +66,156 @@ public final class SearchEngineTest {
         assertEquals(16, SearchEngine.endgameThresholdFor(3_000L), "3s threshold");
         assertEquals(16, SearchEngine.endgameThresholdFor(8_000L), "8s threshold");
         assertEquals(18, SearchEngine.endgameThresholdFor(20_000L), "20s threshold");
+    }
+
+    private static void testExactLastNSolverEligibility() {
+        if (!SearchEngine.exactLastNEligible(2, 2)
+            || !SearchEngine.exactLastNEligible(3, 3)
+            || !SearchEngine.exactLastNEligible(4, 4)) {
+            throw new AssertionError("exact last-N eligibility was rejected");
+        }
+        if (SearchEngine.exactLastNEligible(1, 1)
+            || SearchEngine.exactLastNEligible(4, 3)
+            || SearchEngine.exactLastNEligible(5, 5)) {
+            throw new AssertionError("invalid exact last-N eligibility");
+        }
+    }
+
+    private static void testExactLastNSolverMatchesGeneric() {
+        SearchEngine specialized = exactSolverEngine(true);
+        SearchEngine generic = exactSolverEngine(false);
+        assertExactSearchMatches(
+            new BitBoardPosition(-1L, 0L),
+            1,
+            specialized,
+            generic,
+            "full board"
+        );
+        for (int empties = 1; empties <= 8; empties++) {
+            for (int seed = 1; seed <= 16; seed++) {
+                PositionToMove sample = createEndgame(empties, seed);
+                assertExactSearchMatches(
+                    sample.position,
+                    sample.color,
+                    specialized,
+                    generic,
+                    empties + " empties seed " + seed
+                );
+            }
+        }
+        PositionToMove threshold = createEndgame(
+            SearchEngine.MIN_ENDGAME_THRESHOLD
+        );
+        assertExactSearchMatches(
+            threshold.position,
+            threshold.color,
+            specialized,
+            generic,
+            "existing 12-empty endgame"
+        );
+    }
+
+    private static void testExactLastNSolverEdgeCases() {
+        SearchEngine specialized = exactSolverEngine(true);
+        SearchEngine generic = exactSolverEngine(false);
+
+        long oneEmpty = 1L << 2;
+        long passOpponent = 1L;
+        long passPlayer = ~(oneEmpty | passOpponent);
+        if (BitBoard.legalMoves(passPlayer, passOpponent) != 0L
+            || BitBoard.legalMoves(passOpponent, passPlayer) == 0L) {
+            throw new AssertionError("one-empty pass fixture is invalid");
+        }
+        assertExactSearchMatches(
+            new BitBoardPosition(passPlayer, passOpponent),
+            1,
+            specialized,
+            generic,
+            "one-empty pass"
+        );
+
+        long terminalEmpty = 1L;
+        long terminalPlayer = ~terminalEmpty;
+        if (BitBoard.legalMoves(terminalPlayer, 0L) != 0L
+            || BitBoard.legalMoves(0L, terminalPlayer) != 0L) {
+            throw new AssertionError("unplayed terminal fixture is invalid");
+        }
+        assertExactSearchMatches(
+            new BitBoardPosition(terminalPlayer, 0L),
+            1,
+            specialized,
+            generic,
+            "one-empty terminal"
+        );
+
+        long twoEmpty = 3L;
+        long consecutivePassPlayer = ~twoEmpty;
+        assertExactSearchMatches(
+            new BitBoardPosition(consecutivePassPlayer, 0L),
+            1,
+            specialized,
+            generic,
+            "two-empty consecutive pass"
+        );
+
+        long wipeoutEmpty = 1L << 2;
+        long wipeoutOpponent = 1L << 1;
+        long wipeoutPlayer = ~(wipeoutEmpty | wipeoutOpponent);
+        long wipeoutFlips = BitBoard.flips(
+            wipeoutPlayer,
+            wipeoutOpponent,
+            wipeoutEmpty
+        );
+        if (wipeoutFlips == 0L || BitBoard.applyOpponentBoard(
+            wipeoutOpponent,
+            wipeoutFlips
+        ) != 0L) {
+            throw new AssertionError("wipeout fixture is invalid");
+        }
+        assertExactSearchMatches(
+            new BitBoardPosition(wipeoutPlayer, wipeoutOpponent),
+            1,
+            specialized,
+            generic,
+            "wipeout"
+        );
+    }
+
+    private static SearchEngine exactSolverEngine(boolean enabled) {
+        return new SearchEngine(
+            EVALUATOR,
+            null,
+            true,
+            SearchEngine.MAX_ENDGAME_THRESHOLD,
+            true,
+            enabled
+        );
+    }
+
+    private static void assertExactSearchMatches(
+        BitBoardPosition position,
+        int color,
+        SearchEngine specialized,
+        SearchEngine generic,
+        String message
+    ) {
+        int empties = position.emptyCount();
+        SearchLimits limits = new SearchLimits(
+            60_000L,
+            Math.max(1, empties),
+            1
+        );
+        SearchResult expected = generic.search(position, color, limits);
+        SearchResult actual = specialized.search(position, color, limits);
+        assertEquals(expected.score(), actual.score(), message + " score");
+        assertEquals(
+            expected.bestSquare(),
+            actual.bestSquare(),
+            message + " best square"
+        );
+        if (!expected.exactSolution() || !actual.exactSolution()) {
+            throw new AssertionError(message + " was not solved exactly");
+        }
     }
 
     private static void testTranspositionTableConsistency() {
@@ -637,6 +790,46 @@ public final class SearchEngineTest {
                 ? new BitBoardPosition(nextPlayer, nextOpponent)
                 : new BitBoardPosition(nextOpponent, nextPlayer);
             color = -color;
+        }
+        return new PositionToMove(position, color);
+    }
+
+    private static PositionToMove createEndgame(
+        int maximumEmpties,
+        int seed
+    ) {
+        BitBoardPosition position = BitBoardPosition.initial();
+        int color = 1;
+        int played = 0;
+        while (position.emptyCount() > maximumEmpties) {
+            long player = position.player(color);
+            long opponent = position.opponent(color);
+            long moves = BitBoard.legalMoves(player, opponent);
+            if (moves == 0L) {
+                if (BitBoard.legalMoves(opponent, player) == 0L) {
+                    break;
+                }
+                color = -color;
+                continue;
+            }
+
+            int choice = Math.floorMod(
+                played * 11 + seed * 7,
+                BitBoard.count(moves)
+            );
+            long move = moves;
+            while (choice-- > 0) {
+                move &= move - 1L;
+            }
+            move &= -move;
+            long flips = BitBoard.flips(player, opponent, move);
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            position = color == 1
+                ? new BitBoardPosition(nextPlayer, nextOpponent)
+                : new BitBoardPosition(nextOpponent, nextPlayer);
+            color = -color;
+            played++;
         }
         return new PositionToMove(position, color);
     }

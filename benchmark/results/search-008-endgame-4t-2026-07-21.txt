@@ -1,0 +1,24 @@
+== baseline empties=12 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,12,36,36,10,24,29019,20
+== candidate empties=12 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,12,36,36,5,18,36203,20
+== baseline empties=14 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,14,36,36,59,171,156465,22
+== candidate empties=14 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,14,36,36,30,153,189528,22
+== baseline empties=16 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,16,36,36,528,1959,1646756,24
+== candidate empties=16 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,16,36,36,203,673,1967234,24
+== baseline empties=18 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,18,36,36,3287,18820,13382814,24
+== candidate empties=18 ==
+ordering,threads,empties,solved,samples,avgMillis,maxMillis,avgNodes,avgParallelTasks
+endgame,4,18,36,36,1532,8920,14969983,24
