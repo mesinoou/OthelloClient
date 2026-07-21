@@ -28,7 +28,7 @@ import java.util.Set;
 
 public final class ParallelSearchBenchmark {
 
-    private static final String BENCHMARK_VERSION = "parallel-search-v3";
+    private static final String BENCHMARK_VERSION = "parallel-search-v4";
     private static final int MIN_POSITION_PLY = 16;
     private static final int MAX_POSITION_PLY = 32;
     private static final int PRIME_DEPTH = 3;
@@ -172,6 +172,7 @@ public final class ParallelSearchBenchmark {
             "ttCapacity",
             "ttProbes",
             "ttHits",
+            "ttStores",
             "ttCollisions",
             "ttReplacements",
             "ttRejectedStores",
@@ -453,6 +454,7 @@ public final class ParallelSearchBenchmark {
             Integer.toString(config.transpositionCapacity),
             Long.toString(measurement.ttProbes),
             Long.toString(measurement.ttHits),
+            Long.toString(measurement.ttStores),
             Long.toString(measurement.ttCollisions),
             Long.toString(measurement.ttReplacements),
             Long.toString(measurement.ttRejectedStores),
@@ -977,6 +979,7 @@ public final class ParallelSearchBenchmark {
         private final long workerMonitorBlockedMillis;
         private final long ttProbes;
         private final long ttHits;
+        private final long ttStores;
         private final long ttCollisions;
         private final long ttReplacements;
         private final long ttRejectedStores;
@@ -994,6 +997,7 @@ public final class ParallelSearchBenchmark {
             this.workerMonitorBlockedMillis = workerMonitorBlockedMillis;
             ttProbes = delta(afterStats.probes(), beforeStats.probes());
             ttHits = delta(afterStats.hits(), beforeStats.hits());
+            ttStores = delta(afterStats.stores(), beforeStats.stores());
             ttCollisions = delta(
                 afterStats.collisions(),
                 beforeStats.collisions()
