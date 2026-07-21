@@ -11,6 +11,7 @@ public final class SearchEngineTest {
         testAgainstReferenceNegamax();
         testEndgameThresholdSelection();
         testTranspositionTableDepthGate();
+        testTwoWayTranspositionTable();
         testSpecializedLeafSearch();
         testExactLastNSolverEligibility();
         testExactLastNSolverMatchesGeneric();
@@ -250,6 +251,219 @@ public final class SearchEngineTest {
         if (!SearchEngine.ttEligible(2)) {
             throw new AssertionError("depth 2でTTが無効です。");
         }
+    }
+
+    private static void testTwoWayTranspositionTable() {
+        long player1 = 1L;
+        long opponent1 = 11L;
+        long player2 = 2L;
+        long opponent2 = 22L;
+        long player3 = 3L;
+        long opponent3 = 33L;
+
+        TranspositionTable table = new TranspositionTable(2, 2, true);
+        assertEquals(2, table.ways(), "two-way count");
+        assertEquals(2, table.capacity(), "two-way capacity");
+        assertEquals(1, table.bucketCount(), "two-way buckets");
+        table.store(player1, opponent1, 8, 801, TranspositionTable.EXACT, 8);
+        table.store(
+            player2,
+            opponent2,
+            3,
+            302,
+            TranspositionTable.UPPER_BOUND,
+            3
+        );
+        assertTableEntry(table, player1, opponent1, true, 8, 801, 8);
+        assertTableEntry(table, player2, opponent2, true, 3, 302, 3);
+
+        table.store(
+            player3,
+            opponent3,
+            5,
+            503,
+            TranspositionTable.LOWER_BOUND,
+            5
+        );
+        assertTableEntry(table, player1, opponent1, true, 8, 801, 8);
+        assertTableEntry(table, player2, opponent2, false, 0, 0, -1);
+        assertTableEntry(table, player3, opponent3, true, 5, 503, 5);
+        TranspositionTable.Stats stats = table.snapshotStats();
+        assertEquals(1, (int) stats.collisions(), "two-way collisions");
+        assertEquals(1, (int) stats.replacements(), "two-way replacements");
+
+        TranspositionTable exactPriority = new TranspositionTable(2, 2, false);
+        exactPriority.store(
+            player1,
+            opponent1,
+            4,
+            401,
+            TranspositionTable.EXACT,
+            4
+        );
+        exactPriority.store(
+            player2,
+            opponent2,
+            4,
+            402,
+            TranspositionTable.LOWER_BOUND,
+            4
+        );
+        exactPriority.store(
+            player3,
+            opponent3,
+            4,
+            403,
+            TranspositionTable.UPPER_BOUND,
+            4
+        );
+        assertTableEntry(
+            exactPriority,
+            player1,
+            opponent1,
+            true,
+            4,
+            401,
+            4
+        );
+        assertTableEntry(
+            exactPriority,
+            player2,
+            opponent2,
+            false,
+            0,
+            0,
+            -1
+        );
+
+        TranspositionTable deterministic = new TranspositionTable(2, 2, false);
+        deterministic.store(
+            player1,
+            opponent1,
+            4,
+            401,
+            TranspositionTable.LOWER_BOUND,
+            4
+        );
+        deterministic.store(
+            player2,
+            opponent2,
+            4,
+            402,
+            TranspositionTable.LOWER_BOUND,
+            4
+        );
+        deterministic.store(
+            player3,
+            opponent3,
+            4,
+            403,
+            TranspositionTable.LOWER_BOUND,
+            4
+        );
+        assertTableEntry(deterministic, player1, opponent1, true, 4, 401, 4);
+        assertTableEntry(deterministic, player2, opponent2, false, 0, 0, -1);
+
+        TranspositionTable generation = new TranspositionTable(2, 2, false);
+        generation.store(
+            player1,
+            opponent1,
+            8,
+            801,
+            TranspositionTable.EXACT,
+            8
+        );
+        generation.store(
+            player2,
+            opponent2,
+            7,
+            702,
+            TranspositionTable.EXACT,
+            7
+        );
+        generation.newSearch();
+        generation.store(
+            player1,
+            opponent1,
+            8,
+            811,
+            TranspositionTable.EXACT,
+            8
+        );
+        generation.store(
+            player3,
+            opponent3,
+            1,
+            103,
+            TranspositionTable.UPPER_BOUND,
+            1
+        );
+        assertTableEntry(generation, player1, opponent1, true, 8, 811, 8);
+        assertTableEntry(generation, player2, opponent2, false, 0, 0, -1);
+
+        TranspositionTable samePosition = new TranspositionTable(2, 2, true);
+        samePosition.store(
+            player1,
+            opponent1,
+            8,
+            801,
+            TranspositionTable.EXACT,
+            8
+        );
+        samePosition.store(
+            player1,
+            opponent1,
+            8,
+            899,
+            TranspositionTable.UPPER_BOUND,
+            9
+        );
+        assertTableEntry(samePosition, player1, opponent1, true, 8, 801, 8);
+        assertEquals(
+            1,
+            (int) samePosition.snapshotStats().rejectedStores(),
+            "same-position rejected stores"
+        );
+
+        TranspositionTable oneWay = new TranspositionTable(1 << 10, 1, false);
+        TranspositionTable twoWay = new TranspositionTable(1 << 10, 2, false);
+        if (oneWay.estimatedStorageBytes() != twoWay.estimatedStorageBytes()) {
+            throw new AssertionError("two-way entry storage changed");
+        }
+        assertEquals(2, new TranspositionTable(2).ways(), "default TT ways");
+    }
+
+    private static void assertTableEntry(
+        TranspositionTable table,
+        long player,
+        long opponent,
+        boolean expectedFound,
+        int expectedDepth,
+        int expectedValue,
+        int expectedSquare
+    ) {
+        long probe = table.probe(player, opponent);
+        if (TranspositionTable.probeFound(probe) != expectedFound) {
+            throw new AssertionError("TT entry presence mismatch");
+        }
+        if (!expectedFound) {
+            return;
+        }
+        assertEquals(
+            expectedDepth,
+            TranspositionTable.probeDepth(probe),
+            "TT entry depth"
+        );
+        assertEquals(
+            expectedValue,
+            TranspositionTable.probeValue(probe),
+            "TT entry value"
+        );
+        assertEquals(
+            expectedSquare,
+            TranspositionTable.probeBestSquare(probe),
+            "TT entry square"
+        );
     }
 
     private static void testSpecializedLeafSearch() {
