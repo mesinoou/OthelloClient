@@ -378,7 +378,7 @@ public final class SearchEngine {
     ) {
         checkStop(true, context);
         context.nodes++;
-        int score = -pvs(
+        int score = -searchRootChild(
             opponent,
             player,
             depth,
@@ -440,7 +440,7 @@ public final class SearchEngine {
 
             int score;
             if (index == 0) {
-                score = -pvs(
+                score = -searchRootChild(
                     nextOpponent,
                     nextPlayer,
                     depth - 1,
@@ -452,7 +452,7 @@ public final class SearchEngine {
                 firstMoveScore = score;
             } else {
                 int probeAlpha = lmrEnabled ? firstMoveScore : alpha;
-                score = -pvs(
+                score = -searchRootChild(
                     nextOpponent,
                     nextPlayer,
                     depth - 1,
@@ -463,7 +463,7 @@ public final class SearchEngine {
                 );
                 if (score > probeAlpha && score < beta) {
                     context.pvsResearches++;
-                    score = -pvs(
+                    score = -searchRootChild(
                         nextOpponent,
                         nextPlayer,
                         depth - 1,
@@ -662,13 +662,47 @@ public final class SearchEngine {
         long flips = BitBoard.flips(player, opponent, move);
         long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
         long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
-        return -pvs(
+        return -searchRootChild(
             nextOpponent,
             nextPlayer,
             depth - 1,
             -beta,
             -alpha,
             1,
+            searchContext
+        );
+    }
+
+    private int searchRootChild(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        int ply,
+        SearchContext searchContext
+    ) {
+        if (depth >= 2
+            && depth <= 4
+            && exactSearchActive
+            && exactLastNSolverEnabled) {
+            countExactNode(searchContext);
+            return solveExactLastN(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
+        }
+        return pvs(
+            player,
+            opponent,
+            depth,
+            alpha,
+            beta,
+            ply,
             searchContext
         );
     }
@@ -748,7 +782,7 @@ public final class SearchEngine {
             }
         }
 
-        if (depth <= 4 && exactSearchActive && exactLastNSolverEnabled) {
+        if (depth == 4 && exactSearchActive && exactLastNSolverEnabled) {
             return solveExactLastN(
                 player,
                 opponent,
