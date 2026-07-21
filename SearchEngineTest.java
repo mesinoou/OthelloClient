@@ -12,6 +12,8 @@ public final class SearchEngineTest {
         testEndgameThresholdSelection();
         testTranspositionTableConsistency();
         testRootProbeResearchDecision();
+        testLateMoveReductionEligibility();
+        testLateMoveReductionActivation();
         testParallelMatchesSequential();
         testExactEndgame();
         testExactEndgameAtThreshold();
@@ -166,6 +168,90 @@ public final class SearchEngineTest {
                 "fail-highしていない手が再探索されます。"
             );
         }
+    }
+
+    private static void testLateMoveReductionEligibility() {
+        long ordinaryMove = 1L << 20;
+        if (!SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, true, true)) {
+            throw new AssertionError("LMR対象手を除外しています。");
+        }
+        if (SearchEngine.lmrEligible(4, 4, ordinaryMove, 19, true, true)) {
+            throw new AssertionError("浅い探索でLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 3, ordinaryMove, 19, true, true)) {
+            throw new AssertionError("上位手へLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, 1L, 19, true, true)) {
+            throw new AssertionError("隅へLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 18, true, true)) {
+            throw new AssertionError("終盤探索でLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, true, false)) {
+            throw new AssertionError("パスを発生させる手へLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, false, true)) {
+            throw new AssertionError("PVノードでLMRを適用しています。");
+        }
+        if (SearchEngine.lmrBoundCanBeStored(true, 99, 100)) {
+            throw new AssertionError("未検証LMRのUPPER boundを保存しています。");
+        }
+        if (!SearchEngine.lmrBoundCanBeStored(true, 100, 100)) {
+            throw new AssertionError("LMRのLOWER boundを破棄しています。");
+        }
+        if (!SearchEngine.lmrBoundCanBeStored(false, 99, 100)) {
+            throw new AssertionError("全深度確認済みのboundを破棄しています。");
+        }
+    }
+
+    private static void testLateMoveReductionActivation() {
+        PositionToMove sample = createMidgame(18);
+        SearchLimits sequentialLimits = new SearchLimits(10_000L, 7, 1);
+        SearchEngine firstEngine = new SearchEngine();
+        SearchEngine secondEngine = new SearchEngine();
+        SearchResult first = firstEngine.search(
+            sample.position,
+            sample.color,
+            sequentialLimits
+        );
+        SearchResult second = secondEngine.search(
+            sample.position,
+            sample.color,
+            sequentialLimits
+        );
+
+        assertEquals(first.score(), second.score(), "LMR repeat score");
+        assertEquals(
+            first.bestSquare(),
+            second.bestSquare(),
+            "LMR repeat best square"
+        );
+        if (first.lmrSearches() == 0L) {
+            throw new AssertionError("LMR探索が一度も実行されていません。");
+        }
+        if (first.lmrResearches() > first.lmrSearches()) {
+            throw new AssertionError("LMR再探索回数が探索回数を超えています。");
+        }
+
+        SearchEngine parallelEngine = new SearchEngine();
+        SearchResult parallel = parallelEngine.search(
+            sample.position,
+            sample.color,
+            new SearchLimits(10_000L, 7, 4)
+        );
+        assertEquals(first.score(), parallel.score(), "LMR parallel score");
+        assertEquals(
+            first.bestSquare(),
+            parallel.bestSquare(),
+            "LMR parallel best square"
+        );
+        if (parallel.lmrSearches() == 0L) {
+            throw new AssertionError("並列LMR探索が実行されていません。");
+        }
+
+        firstEngine.shutdown();
+        secondEngine.shutdown();
+        parallelEngine.shutdown();
     }
 
     private static void testExactEndgame() {

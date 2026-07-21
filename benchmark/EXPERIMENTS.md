@@ -32,7 +32,7 @@
 | SEARCH-003 | rejected | `benchmark/parallel-v2-20260721` | `codex/history-ordering` | scaled history heuristicでbeta cutoff手を優先 | `benchmark/results/search-003-history-ordering-2026-07-21.md` | 別seedの4Tでノード1.84%、時間0.96%短縮、標準500ms深さは微減 | 効果が小さいため不採用 |
 | SEARCH-004 | rejected | `benchmark/parallel-v2-20260721` | `codex/killer-ordering` | killer heuristicだけを追加して手順整列を強化 | `benchmark/results/search-004-killer-ordering-2026-07-21.md` | 別seedの4Tでノード0.58%増、標準500 ms深さは9.69から9.56へ低下 | 性能ゲート未通過のため不採用 |
 | SEARCH-005 | rejected | `benchmark/parallel-v2-20260721` | `codex/aspiration-window` | 反復深化の前回評価値を中心にaspiration windowを適用 | `benchmark/results/search-005-aspiration-window-2026-07-21.md` | 標準4Tでノード4.46%減、別seedで1.19%減、500 ms深さは微減 | 効果が小さく局面依存のため不採用 |
-| SEARCH-006 | planned | `benchmark/parallel-v2-20260721` | `codex/late-move-reduction` | 後順位の非PV手を浅く探索し、fail-high時だけ全深度で再探索 | 固定深さノード数、再探索率、500 ms到達深さ、Edax L7 | pending | selective searchのため対局評価を必須とする |
+| SEARCH-006 | accepted | `benchmark/parallel-v2-20260721` | `codex/late-move-reduction` | 後順位の非PV手を浅く探索し、fail-high時だけ全深度で再探索 | `benchmark/results/search-006-late-move-reduction-2026-07-21.md` | 4T深さ9でノード22.04%減、500 ms深さ+0.62、同時点Edax基準比+1.5pt | `baseline/lmr-20260721`として統合 |
 
 ## Model baseline
 
