@@ -28,7 +28,7 @@ import java.util.Set;
 
 public final class ParallelSearchBenchmark {
 
-    private static final String BENCHMARK_VERSION = "parallel-search-v2";
+    private static final String BENCHMARK_VERSION = "parallel-search-v3";
     private static final int MIN_POSITION_PLY = 16;
     private static final int MAX_POSITION_PLY = 32;
     private static final int PRIME_DEPTH = 3;
@@ -168,6 +168,14 @@ public final class ParallelSearchBenchmark {
             "parallelWorkerNodes",
             "workerMonitorBlocks",
             "workerMonitorBlockedMillis",
+            "ttWays",
+            "ttCapacity",
+            "ttProbes",
+            "ttHits",
+            "ttCollisions",
+            "ttReplacements",
+            "ttRejectedStores",
+            "ttSamePositionUpdates",
             "transpositionHits",
             "betaCutoffs",
             "pvsResearches",
@@ -335,7 +343,11 @@ public final class ParallelSearchBenchmark {
     private SearchEngine createPreparedEngine(int threads) {
         SearchEngine engine = new SearchEngine(
             evaluator,
-            new TranspositionTable(config.transpositionCapacity)
+            new TranspositionTable(
+                config.transpositionCapacity,
+                config.transpositionWays,
+                config.transpositionMetrics
+            )
         );
         engine.search(
             BitBoardPosition.initial(),
@@ -353,12 +365,16 @@ public final class ParallelSearchBenchmark {
         SearchLimits limits
     ) {
         MonitorSnapshot before = monitorSnapshot(engine);
+        TranspositionTable.Stats beforeStats = engine.transpositionTableStats();
         SearchResult result = engine.search(position, color, limits);
+        TranspositionTable.Stats afterStats = engine.transpositionTableStats();
         MonitorSnapshot after = monitorSnapshot(engine);
         return new SearchMeasurement(
             result,
             Math.max(0L, after.blockedCount - before.blockedCount),
-            Math.max(0L, after.blockedMillis - before.blockedMillis)
+            Math.max(0L, after.blockedMillis - before.blockedMillis),
+            beforeStats,
+            afterStats
         );
     }
 
@@ -433,6 +449,14 @@ public final class ParallelSearchBenchmark {
             join(result.parallelWorkerNodes()),
             Long.toString(measurement.workerMonitorBlocks),
             Long.toString(measurement.workerMonitorBlockedMillis),
+            Integer.toString(config.transpositionWays),
+            Integer.toString(config.transpositionCapacity),
+            Long.toString(measurement.ttProbes),
+            Long.toString(measurement.ttHits),
+            Long.toString(measurement.ttCollisions),
+            Long.toString(measurement.ttReplacements),
+            Long.toString(measurement.ttRejectedStores),
+            Long.toString(measurement.ttSamePositionUpdates),
             Long.toString(result.transpositionHits()),
             Long.toString(result.betaCutoffs()),
             Long.toString(result.pvsResearches()),
@@ -729,6 +753,8 @@ public final class ParallelSearchBenchmark {
         private int warmups = 1;
         private long seed = 20260721L;
         private int transpositionCapacity = 1 << 18;
+        private int transpositionWays = 2;
+        private boolean transpositionMetrics;
         private boolean contentionMetrics;
         private boolean overwrite;
         private boolean help;
@@ -773,6 +799,14 @@ public final class ParallelSearchBenchmark {
                         ++index,
                         option
                     );
+                } else if ("--tt-ways".equals(option)) {
+                    config.transpositionWays = parseInt(
+                        args,
+                        ++index,
+                        option
+                    );
+                } else if ("--tt-metrics".equals(option)) {
+                    config.transpositionMetrics = true;
                 } else {
                     throw new IllegalArgumentException(
                         "unknown option: " + option
@@ -803,6 +837,14 @@ public final class ParallelSearchBenchmark {
                 "tt capacity must be a power of two"
             );
             require(
+                transpositionWays == 1 || transpositionWays == 2,
+                "tt ways must be 1 or 2"
+            );
+            require(
+                transpositionCapacity >= transpositionWays,
+                "tt capacity must cover all ways"
+            );
+            require(
                 threads.contains(1),
                 "thread configurations must include 1"
             );
@@ -824,6 +866,8 @@ public final class ParallelSearchBenchmark {
             stream.println("  --warmups N              warmups per thread count (default 1)");
             stream.println("  --seed N                 position seed (default 20260721)");
             stream.println("  --tt-capacity N          power-of-two entries (default 262144)");
+            stream.println("  --tt-ways N              bucket ways: 1 or 2 (default 2)");
+            stream.println("  --tt-metrics             record TT probe and replacement counters");
             stream.println("  --output PATH            write detailed CSV to PATH");
             stream.println("  --contention-metrics     record worker monitor blocking");
             stream.println("  --overwrite              replace an existing output file");
@@ -931,15 +975,45 @@ public final class ParallelSearchBenchmark {
         private final SearchResult result;
         private final long workerMonitorBlocks;
         private final long workerMonitorBlockedMillis;
+        private final long ttProbes;
+        private final long ttHits;
+        private final long ttCollisions;
+        private final long ttReplacements;
+        private final long ttRejectedStores;
+        private final long ttSamePositionUpdates;
 
         private SearchMeasurement(
             SearchResult result,
             long workerMonitorBlocks,
-            long workerMonitorBlockedMillis
+            long workerMonitorBlockedMillis,
+            TranspositionTable.Stats beforeStats,
+            TranspositionTable.Stats afterStats
         ) {
             this.result = result;
             this.workerMonitorBlocks = workerMonitorBlocks;
             this.workerMonitorBlockedMillis = workerMonitorBlockedMillis;
+            ttProbes = delta(afterStats.probes(), beforeStats.probes());
+            ttHits = delta(afterStats.hits(), beforeStats.hits());
+            ttCollisions = delta(
+                afterStats.collisions(),
+                beforeStats.collisions()
+            );
+            ttReplacements = delta(
+                afterStats.replacements(),
+                beforeStats.replacements()
+            );
+            ttRejectedStores = delta(
+                afterStats.rejectedStores(),
+                beforeStats.rejectedStores()
+            );
+            ttSamePositionUpdates = delta(
+                afterStats.samePositionUpdates(),
+                beforeStats.samePositionUpdates()
+            );
+        }
+
+        private static long delta(long after, long before) {
+            return Math.max(0L, after - before);
         }
     }
 

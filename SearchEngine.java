@@ -173,6 +173,10 @@ public final class SearchEngine {
         return workerThreads.toArray(new Thread[0]);
     }
 
+    TranspositionTable.Stats transpositionTableStats() {
+        return table == null ? null : table.snapshotStats();
+    }
+
     private SearchResult search(
         long player,
         long opponent,
