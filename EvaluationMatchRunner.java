@@ -10,7 +10,7 @@ import java.util.Set;
 
 public final class EvaluationMatchRunner {
 
-    private static final long OPENING_SEED = 20260721L;
+    private static final long DEFAULT_OPENING_SEED = 20260721L;
     private static final int TABLE_CAPACITY = 1 << 18;
     private static final Path EDAX_EXECUTABLE = Paths.get(
         "benchmark",
@@ -41,7 +41,8 @@ public final class EvaluationMatchRunner {
         PositionEvaluator learned = LearnedEvaluator.load(settings.modelPath);
         List<Opening> openings = generateOpenings(
             settings.pairs,
-            settings.openingPlies
+            settings.openingPlies,
+            settings.openingSeed
         );
         MatchStatistics statistics = new MatchStatistics(settings);
 
@@ -57,7 +58,7 @@ public final class EvaluationMatchRunner {
             "pairs=" + settings.pairs
                 + ", games=" + settings.pairs * 2
                 + ", openingPlies=" + settings.openingPlies
-                + ", openingSeed=" + OPENING_SEED
+                + ", openingSeed=" + settings.openingSeed
         );
         System.out.println(
             "searchTimeMillis=" + settings.timeMillis
@@ -196,13 +197,17 @@ public final class EvaluationMatchRunner {
         );
     }
 
-    private static List<Opening> generateOpenings(int count, int plies) {
+    private static List<Opening> generateOpenings(
+        int count,
+        int plies,
+        long openingSeed
+    ) {
         List<Opening> openings = new ArrayList<>(count);
         Set<String> positions = new HashSet<>();
         int attempt = 0;
         while (openings.size() < count) {
             Random random = new Random(
-                OPENING_SEED + 0x9e3779b97f4a7c15L * attempt
+                openingSeed + 0x9e3779b97f4a7c15L * attempt
             );
             attempt++;
             Opening opening = generateOpening(random, plies);
@@ -541,6 +546,7 @@ public final class EvaluationMatchRunner {
         private final int maxDepth;
         private final int threads;
         private final int edaxLevel;
+        private final long openingSeed;
 
         private Settings(
             Path modelPath,
@@ -550,7 +556,8 @@ public final class EvaluationMatchRunner {
             long timeMillis,
             int maxDepth,
             int threads,
-            int edaxLevel
+            int edaxLevel,
+            long openingSeed
         ) {
             this.modelPath = modelPath;
             this.opponent = opponent;
@@ -560,14 +567,16 @@ public final class EvaluationMatchRunner {
             this.maxDepth = maxDepth;
             this.threads = threads;
             this.edaxLevel = edaxLevel;
+            this.openingSeed = openingSeed;
         }
 
         private static Settings parse(String[] args) {
-            if (args.length < 2 || args.length > 8) {
+            if (args.length < 2 || args.length > 9) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
                         + "<handcrafted|edax> [pairs] [openingPlies] "
-                        + "[timeMillis] [maxDepth] [threads] [edaxLevel]"
+                        + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
+                        + "[openingSeed]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
@@ -587,6 +596,7 @@ public final class EvaluationMatchRunner {
             int maxDepth = integerArg(args, 5, 64);
             int threads = integerArg(args, 6, 1);
             int edaxLevel = integerArg(args, 7, 4);
+            long openingSeed = longArg(args, 8, DEFAULT_OPENING_SEED);
             if (pairs < 1 || pairs > 1000) {
                 throw new IllegalArgumentException("pairs must be 1..1000");
             }
@@ -617,7 +627,8 @@ public final class EvaluationMatchRunner {
                 timeMillis,
                 maxDepth,
                 threads,
-                edaxLevel
+                edaxLevel,
+                openingSeed
             );
         }
 
