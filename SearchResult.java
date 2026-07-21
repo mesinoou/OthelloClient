@@ -12,6 +12,8 @@ public final class SearchResult {
     private final long pvsResearches;
     private final long lmrSearches;
     private final long lmrResearches;
+    private final long lmrTwoPlySearches;
+    private final long lmrTwoPlyResearches;
     private final long stabilityChecks;
     private final long stabilityCuts;
     private final long parallelNodes;
@@ -287,6 +289,60 @@ public final class SearchResult {
         long stabilityChecks,
         long stabilityCuts
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            lmrSearches,
+            lmrResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes,
+            stabilityChecks,
+            stabilityCuts,
+            0L,
+            0L
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes,
+        long stabilityChecks,
+        long stabilityCuts,
+        long lmrTwoPlySearches,
+        long lmrTwoPlyResearches
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -297,6 +353,8 @@ public final class SearchResult {
         this.pvsResearches = pvsResearches;
         this.lmrSearches = lmrSearches;
         this.lmrResearches = lmrResearches;
+        this.lmrTwoPlySearches = lmrTwoPlySearches;
+        this.lmrTwoPlyResearches = lmrTwoPlyResearches;
         this.stabilityChecks = stabilityChecks;
         this.stabilityCuts = stabilityCuts;
         this.parallelNodes = parallelNodes;
@@ -351,6 +409,14 @@ public final class SearchResult {
 
     public long lmrResearches() {
         return lmrResearches;
+    }
+
+    public long lmrTwoPlySearches() {
+        return lmrTwoPlySearches;
+    }
+
+    public long lmrTwoPlyResearches() {
+        return lmrTwoPlyResearches;
     }
 
     public long stabilityChecks() {

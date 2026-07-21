@@ -392,7 +392,11 @@ public final class SearchEngine {
             parallelMetrics.workerNodesSnapshot(),
             context.stabilityChecks
                 + parallelMetrics.stabilityChecks.get(),
-            context.stabilityCuts + parallelMetrics.stabilityCuts.get()
+            context.stabilityCuts + parallelMetrics.stabilityCuts.get(),
+            context.lmrTwoPlySearches
+                + parallelMetrics.lmrTwoPlySearches.get(),
+            context.lmrTwoPlyResearches
+                + parallelMetrics.lmrTwoPlyResearches.get()
         );
     }
 
@@ -957,7 +961,7 @@ public final class SearchEngine {
                     searchContext
                 );
             } else {
-                boolean reduce = shouldReduceLateMove(
+                int reduction = lateMoveReduction(
                     depth,
                     index,
                     move,
@@ -966,12 +970,15 @@ public final class SearchEngine {
                     nextPlayer,
                     nextOpponent
                 );
-                if (reduce) {
+                if (reduction > 0) {
                     searchContext.lmrSearches++;
+                    if (reduction == 2) {
+                        searchContext.lmrTwoPlySearches++;
+                    }
                     score = -pvs(
                         nextOpponent,
                         nextPlayer,
-                        depth - 2,
+                        depth - 1 - reduction,
                         -alpha - 1,
                         -alpha,
                         ply + 1,
@@ -979,6 +986,9 @@ public final class SearchEngine {
                     );
                     if (score > alpha) {
                         searchContext.lmrResearches++;
+                        if (reduction == 2) {
+                            searchContext.lmrTwoPlyResearches++;
+                        }
                         score = -pvs(
                             nextOpponent,
                             nextPlayer,
@@ -1500,7 +1510,30 @@ public final class SearchEngine {
             && opponentHasMove;
     }
 
-    private boolean shouldReduceLateMove(
+    static int lmrReduction(
+        int depth,
+        int moveIndex,
+        long move,
+        int empties,
+        boolean nullWindow,
+        int opponentMobility
+    ) {
+        if (!lmrEligible(
+            depth,
+            moveIndex,
+            move,
+            empties,
+            nullWindow,
+            opponentMobility > 0
+        )) {
+            return 0;
+        }
+        return depth >= 8 && moveIndex >= 8 && opponentMobility >= 6
+            ? 2
+            : 1;
+    }
+
+    private int lateMoveReduction(
         int depth,
         int moveIndex,
         long move,
@@ -1509,17 +1542,20 @@ public final class SearchEngine {
         long nextPlayer,
         long nextOpponent
     ) {
-        if (!lmrEnabled || !lmrEligible(
+        if (!lmrEnabled) {
+            return 0;
+        }
+        int opponentMobility = BitBoard.count(
+            BitBoard.legalMoves(nextOpponent, nextPlayer)
+        );
+        return lmrReduction(
             depth,
             moveIndex,
             move,
             empties,
             nullWindow,
-            true
-        )) {
-            return false;
-        }
-        return BitBoard.legalMoves(nextOpponent, nextPlayer) != 0L;
+            opponentMobility
+        );
     }
 
     private int prepareMoves(
@@ -1826,6 +1862,8 @@ public final class SearchEngine {
         private final AtomicLong pvsResearches = new AtomicLong();
         private final AtomicLong lmrSearches = new AtomicLong();
         private final AtomicLong lmrResearches = new AtomicLong();
+        private final AtomicLong lmrTwoPlySearches = new AtomicLong();
+        private final AtomicLong lmrTwoPlyResearches = new AtomicLong();
         private final AtomicLong stabilityChecks = new AtomicLong();
         private final AtomicLong stabilityCuts = new AtomicLong();
         private final AtomicInteger tasks = new AtomicInteger();
@@ -1839,6 +1877,8 @@ public final class SearchEngine {
             pvsResearches.set(0L);
             lmrSearches.set(0L);
             lmrResearches.set(0L);
+            lmrTwoPlySearches.set(0L);
+            lmrTwoPlyResearches.set(0L);
             stabilityChecks.set(0L);
             stabilityCuts.set(0L);
             tasks.set(0);
@@ -1852,6 +1892,10 @@ public final class SearchEngine {
             pvsResearches.addAndGet(searchContext.pvsResearches);
             lmrSearches.addAndGet(searchContext.lmrSearches);
             lmrResearches.addAndGet(searchContext.lmrResearches);
+            lmrTwoPlySearches.addAndGet(searchContext.lmrTwoPlySearches);
+            lmrTwoPlyResearches.addAndGet(
+                searchContext.lmrTwoPlyResearches
+            );
             stabilityChecks.addAndGet(searchContext.stabilityChecks);
             stabilityCuts.addAndGet(searchContext.stabilityCuts);
             tasks.incrementAndGet();

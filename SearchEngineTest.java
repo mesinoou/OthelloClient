@@ -511,6 +511,31 @@ public final class SearchEngineTest {
         if (!SearchEngine.lmrBoundCanBeStored(false, 99, 100)) {
             throw new AssertionError("全深度確認済みのboundを破棄しています。");
         }
+        assertEquals(
+            2,
+            SearchEngine.lmrReduction(8, 8, ordinaryMove, 19, true, 6),
+            "adaptive LMR two-ply boundary"
+        );
+        assertEquals(
+            1,
+            SearchEngine.lmrReduction(7, 8, ordinaryMove, 19, true, 6),
+            "adaptive LMR depth boundary"
+        );
+        assertEquals(
+            1,
+            SearchEngine.lmrReduction(8, 7, ordinaryMove, 19, true, 6),
+            "adaptive LMR move boundary"
+        );
+        assertEquals(
+            1,
+            SearchEngine.lmrReduction(8, 8, ordinaryMove, 19, true, 5),
+            "adaptive LMR mobility boundary"
+        );
+        assertEquals(
+            0,
+            SearchEngine.lmrReduction(8, 8, ordinaryMove, 19, true, 0),
+            "adaptive LMR pass exclusion"
+        );
     }
 
     private static void testLateMoveReductionActivation() {
@@ -540,6 +565,10 @@ public final class SearchEngineTest {
         }
         if (first.lmrResearches() > first.lmrSearches()) {
             throw new AssertionError("LMR再探索回数が探索回数を超えています。");
+        }
+        if (first.lmrTwoPlySearches() > first.lmrSearches()
+            || first.lmrTwoPlyResearches() > first.lmrResearches()) {
+            throw new AssertionError("2 ply LMR counterが合計を超えています。");
         }
 
         SearchEngine parallelEngine = new SearchEngine();

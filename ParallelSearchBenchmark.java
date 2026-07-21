@@ -176,6 +176,8 @@ public final class ParallelSearchBenchmark {
             "pvsResearches",
             "lmrSearches",
             "lmrResearches",
+            "lmrTwoPlySearches",
+            "lmrTwoPlyResearches",
             "timedOut",
             "consistent"
         );
@@ -449,6 +451,8 @@ public final class ParallelSearchBenchmark {
             Long.toString(result.pvsResearches()),
             Long.toString(result.lmrSearches()),
             Long.toString(result.lmrResearches()),
+            Long.toString(result.lmrTwoPlySearches()),
+            Long.toString(result.lmrTwoPlyResearches()),
             Boolean.toString(result.timedOut()),
             consistent
         );

@@ -11,6 +11,8 @@ final class SearchContext {
     long pvsResearches;
     long lmrSearches;
     long lmrResearches;
+    long lmrTwoPlySearches;
+    long lmrTwoPlyResearches;
     long stabilityChecks;
     long stabilityCuts;
     int rootBestSquare;
@@ -24,6 +26,8 @@ final class SearchContext {
         pvsResearches = 0L;
         lmrSearches = 0L;
         lmrResearches = 0L;
+        lmrTwoPlySearches = 0L;
+        lmrTwoPlyResearches = 0L;
         stabilityChecks = 0L;
         stabilityCuts = 0L;
         rootBestSquare = -1;
