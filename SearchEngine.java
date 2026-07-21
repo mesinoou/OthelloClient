@@ -50,6 +50,7 @@ public final class SearchEngine {
     private ExecutorService workerPool;
     private int workerThreadCount;
     private long deadlineNanos;
+    private boolean exactSearchActive;
 
     public SearchEngine() {
         this(new Evaluator(), new TranspositionTable(1 << 18));
@@ -179,6 +180,7 @@ public final class SearchEngine {
     ) {
         stopRequested.set(false);
         timedOut.set(false);
+        exactSearchActive = false;
         activeTasks.clear();
         context.reset();
         parallelMetrics.reset();
@@ -260,6 +262,7 @@ public final class SearchEngine {
             }
 
             if (endgameSearch) {
+                exactSearchActive = true;
                 if (rootPass) {
                     searchPassedRoot(player, opponent, emptyCount);
                 } else if (shouldSearchParallel(
@@ -291,6 +294,7 @@ public final class SearchEngine {
         } catch (SearchAbortedException ignored) {
             aborted = true;
         } finally {
+            exactSearchActive = false;
             cancelActiveTasks();
             activeTasks.clear();
         }
@@ -744,10 +748,11 @@ public final class SearchEngine {
             }
         }
 
-        int empties = -1;
-        if (depth <= 4 && exactLastNSolverEnabled) {
-            empties = BitBoard.countEmpty(player, opponent);
-            if (exactLastNEligible(depth, empties)) {
+        if (depth <= 4
+            && exactSearchActive
+            && exactLastNSolverEnabled) {
+            int exactEmpties = BitBoard.countEmpty(player, opponent);
+            if (exactLastNEligible(depth, exactEmpties)) {
                 long empty = ~(player | opponent);
                 if (depth == 4) {
                     return solve4(
@@ -832,9 +837,7 @@ public final class SearchEngine {
             return value;
         }
 
-        if (empties < 0) {
-            empties = BitBoard.countEmpty(player, opponent);
-        }
+        int empties = BitBoard.countEmpty(player, opponent);
         if (empties == 1) {
             long move = legalMoves & -legalMoves;
             long flips = BitBoard.flips(player, opponent, move);
