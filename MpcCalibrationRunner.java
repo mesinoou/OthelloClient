@@ -87,7 +87,16 @@ public final class MpcCalibrationRunner {
             seed + 0x9e3779b97f4a7c15L * (phase + 1L)
         );
         Set<String> seen = new HashSet<>();
-        SearchEngine engine = new SearchEngine(evaluator, null);
+        SearchEngine engine = new SearchEngine(
+            evaluator,
+            null,
+            true,
+            0,
+            true,
+            true,
+            true,
+            false
+        );
         try {
             int generated = 0;
             int attempts = 0;

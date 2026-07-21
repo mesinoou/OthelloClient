@@ -21,6 +21,7 @@ public final class SearchEngineTest {
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
         testLateMoveReductionActivation();
+        testMultiProbCutCalibration();
         testParallelMatchesSequential();
         testExactEndgame();
         testExactEndgameAtThreshold();
@@ -561,6 +562,29 @@ public final class SearchEngineTest {
         firstEngine.shutdown();
         secondEngine.shutdown();
         parallelEngine.shutdown();
+    }
+
+    private static void testMultiProbCutCalibration() {
+        MultiProbCut.Parameters phaseZero = MultiProbCut.parametersFor(8, 31);
+        MultiProbCut.Parameters phaseZeroDeep = MultiProbCut.parametersFor(
+            10,
+            31
+        );
+        MultiProbCut.Parameters phaseOne = MultiProbCut.parametersFor(8, 30);
+        if (phaseZero == null || phaseZeroDeep == null || phaseOne == null) {
+            throw new AssertionError("MPC calibration group is missing");
+        }
+        if (MultiProbCut.parametersFor(6, 31) != null
+            || MultiProbCut.parametersFor(6, 30) != null
+            || MultiProbCut.parametersFor(8, 20) != null
+            || MultiProbCut.parametersFor(8, 18) != null) {
+            throw new AssertionError("uncalibrated MPC group is enabled");
+        }
+        int high = MultiProbCut.failHighThreshold(101, phaseZero);
+        int low = MultiProbCut.failLowThreshold(100, phaseZero);
+        if (high <= 101 || low >= 100 || high <= low) {
+            throw new AssertionError("MPC threshold margins are invalid");
+        }
     }
 
     private static void testExactEndgame() {

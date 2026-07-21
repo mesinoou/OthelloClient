@@ -13,6 +13,11 @@ final class SearchContext {
     long lmrResearches;
     long stabilityChecks;
     long stabilityCuts;
+    long mpcAttempts;
+    long mpcHighCuts;
+    long mpcLowCuts;
+    long mpcProbeNodes;
+    boolean mpcProbeActive;
     int rootBestSquare;
     int rootScore;
     boolean timedOut;
@@ -26,6 +31,11 @@ final class SearchContext {
         lmrResearches = 0L;
         stabilityChecks = 0L;
         stabilityCuts = 0L;
+        mpcAttempts = 0L;
+        mpcHighCuts = 0L;
+        mpcLowCuts = 0L;
+        mpcProbeNodes = 0L;
+        mpcProbeActive = false;
         rootBestSquare = -1;
         rootScore = 0;
         timedOut = false;
