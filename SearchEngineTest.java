@@ -10,6 +10,7 @@ public final class SearchEngineTest {
     public static void main(String[] args) throws Exception {
         testAgainstReferenceNegamax();
         testEndgameThresholdSelection();
+        testTranspositionTableDepthGate();
         testTranspositionTableConsistency();
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
@@ -85,6 +86,15 @@ public final class SearchEngineTest {
         );
         if (cached.transpositionHits() == 0L) {
             throw new AssertionError("置換表が一度も参照されていません。");
+        }
+    }
+
+    private static void testTranspositionTableDepthGate() {
+        if (SearchEngine.ttEligible(0) || SearchEngine.ttEligible(1)) {
+            throw new AssertionError("浅いnodeでTTが有効です。");
+        }
+        if (!SearchEngine.ttEligible(2)) {
+            throw new AssertionError("depth 2でTTが無効です。");
         }
     }
 
