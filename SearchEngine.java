@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -35,6 +36,8 @@ public final class SearchEngine {
     private final AtomicBoolean stopRequested = new AtomicBoolean();
     private final AtomicBoolean timedOut = new AtomicBoolean();
     private final CopyOnWriteArrayList<Future<?>> activeTasks =
+        new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Thread> workerThreads =
         new CopyOnWriteArrayList<>();
     private final ParallelMetrics parallelMetrics = new ParallelMetrics();
     private final Object poolLock = new Object();
@@ -111,8 +114,21 @@ public final class SearchEngine {
                 workerPool.shutdownNow();
                 workerPool = null;
                 workerThreadCount = 0;
+                workerThreads.clear();
             }
         }
+    }
+
+    void prestartWorkerThreads() {
+        synchronized (poolLock) {
+            if (workerPool instanceof ThreadPoolExecutor) {
+                ((ThreadPoolExecutor) workerPool).prestartAllCoreThreads();
+            }
+        }
+    }
+
+    Thread[] workerThreadsSnapshot() {
+        return workerThreads.toArray(new Thread[0]);
     }
 
     private SearchResult search(
@@ -957,6 +973,7 @@ public final class SearchEngine {
             if (workerPool != null) {
                 workerPool.shutdownNow();
             }
+            workerThreads.clear();
             AtomicInteger workerId = new AtomicInteger();
             ThreadFactory factory = task -> {
                 Thread thread = new Thread(
@@ -964,6 +981,7 @@ public final class SearchEngine {
                     "othello-search-worker-" + workerId.incrementAndGet()
                 );
                 thread.setDaemon(true);
+                workerThreads.add(thread);
                 return thread;
             };
             workerPool = Executors.newFixedThreadPool(
