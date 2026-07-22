@@ -64,6 +64,7 @@ public final class EvaluationMatchRunner {
             "searchTimeMillis=" + settings.timeMillis
                 + ", maxDepth=" + settings.maxDepth
                 + ", threads=" + settings.threads
+                + ", ponderMillis=" + settings.ponderMillis
                 + ", openingBook=off"
         );
 
@@ -142,6 +143,9 @@ public final class EvaluationMatchRunner {
                 }
 
                 MatchPlayer current = color == 1 ? black : white;
+                if (color != learnedColor) {
+                    learned.ponder(position, color);
+                }
                 int square = current.chooseMove(position, color);
                 if (square < 0
                     || square >= 64
@@ -294,6 +298,7 @@ public final class EvaluationMatchRunner {
         private final int assignedColor;
         private final SearchEngine engine;
         private final SearchLimits limits;
+        private final SearchLimits ponderLimits;
         private final PlayerMetrics metrics = new PlayerMetrics(true);
 
         private SearchMatchPlayer(
@@ -313,6 +318,13 @@ public final class EvaluationMatchRunner {
                 settings.maxDepth,
                 settings.threads
             );
+            ponderLimits = settings.ponderMillis == 0L
+                ? null
+                : new SearchLimits(
+                    settings.ponderMillis,
+                    settings.maxDepth,
+                    settings.threads
+                );
         }
 
         @Override
@@ -325,9 +337,18 @@ public final class EvaluationMatchRunner {
             if (color != assignedColor) {
                 throw new IllegalArgumentException("search player color mismatch");
             }
+            boolean initialTtHit = engine.hasTransposition(position, color);
             SearchResult result = engine.search(position, color, limits);
-            metrics.add(result);
+            metrics.add(result, initialTtHit);
             return result.bestSquare();
+        }
+
+        private void ponder(BitBoardPosition position, int color) {
+            if (ponderLimits == null) {
+                return;
+            }
+            SearchResult result = engine.search(position, color, ponderLimits);
+            metrics.addPonder(result);
         }
 
         @Override
@@ -411,12 +432,17 @@ public final class EvaluationMatchRunner {
         private long depthSum;
         private long budgetStops;
         private long exactMoves;
+        private long initialTtHits;
+        private long ponderMoves;
+        private long ponderElapsedNanos;
+        private long ponderNodes;
+        private long ponderDepthSum;
 
         private PlayerMetrics(boolean searchMetrics) {
             this.searchMetrics = searchMetrics;
         }
 
-        private void add(SearchResult result) {
+        private void add(SearchResult result, boolean initialTtHit) {
             moves++;
             elapsedNanos += result.elapsedNanos();
             nodes += result.nodes();
@@ -427,6 +453,16 @@ public final class EvaluationMatchRunner {
             if (result.exactSolution()) {
                 exactMoves++;
             }
+            if (initialTtHit) {
+                initialTtHits++;
+            }
+        }
+
+        private void addPonder(SearchResult result) {
+            ponderMoves++;
+            ponderElapsedNanos += result.elapsedNanos();
+            ponderNodes += result.nodes();
+            ponderDepthSum += result.completedDepth();
         }
 
         private void addExternal(long elapsed) {
@@ -441,6 +477,11 @@ public final class EvaluationMatchRunner {
             depthSum += other.depthSum;
             budgetStops += other.budgetStops;
             exactMoves += other.exactMoves;
+            initialTtHits += other.initialTtHits;
+            ponderMoves += other.ponderMoves;
+            ponderElapsedNanos += other.ponderElapsedNanos;
+            ponderNodes += other.ponderNodes;
+            ponderDepthSum += other.ponderDepthSum;
         }
 
         private void print(String label) {
@@ -464,13 +505,25 @@ public final class EvaluationMatchRunner {
                 System.out.printf(
                     Locale.ROOT,
                     " avgDepth=%.2f nodes=%d nodesPerSecond=%.0f "
-                        + "budgetStops=%d exactMoves=%d",
+                        + "budgetStops=%d exactMoves=%d initialTtHits=%d",
                     averageDepth,
                     nodes,
                     nodesPerSecond,
                     budgetStops,
-                    exactMoves
+                    exactMoves,
+                    initialTtHits
                 );
+                if (ponderMoves > 0L) {
+                    System.out.printf(
+                        Locale.ROOT,
+                        " ponderMoves=%d ponderAvg=%.3fms "
+                            + "ponderAvgDepth=%.2f ponderNodes=%d",
+                        ponderMoves,
+                        ponderElapsedNanos / 1_000_000.0 / ponderMoves,
+                        (double) ponderDepthSum / ponderMoves,
+                        ponderNodes
+                    );
+                }
             }
             System.out.println();
         }
@@ -547,6 +600,7 @@ public final class EvaluationMatchRunner {
         private final int threads;
         private final int edaxLevel;
         private final long openingSeed;
+        private final long ponderMillis;
 
         private Settings(
             Path modelPath,
@@ -557,7 +611,8 @@ public final class EvaluationMatchRunner {
             int maxDepth,
             int threads,
             int edaxLevel,
-            long openingSeed
+            long openingSeed,
+            long ponderMillis
         ) {
             this.modelPath = modelPath;
             this.opponent = opponent;
@@ -568,15 +623,16 @@ public final class EvaluationMatchRunner {
             this.threads = threads;
             this.edaxLevel = edaxLevel;
             this.openingSeed = openingSeed;
+            this.ponderMillis = ponderMillis;
         }
 
         private static Settings parse(String[] args) {
-            if (args.length < 2 || args.length > 9) {
+            if (args.length < 2 || args.length > 10) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
                         + "<handcrafted|edax> [pairs] [openingPlies] "
                         + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
-                        + "[openingSeed]"
+                        + "[openingSeed] [ponderMillis]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
@@ -597,6 +653,7 @@ public final class EvaluationMatchRunner {
             int threads = integerArg(args, 6, 1);
             int edaxLevel = integerArg(args, 7, 4);
             long openingSeed = longArg(args, 8, DEFAULT_OPENING_SEED);
+            long ponderMillis = longArg(args, 9, 0L);
             if (pairs < 1 || pairs > 1000) {
                 throw new IllegalArgumentException("pairs must be 1..1000");
             }
@@ -619,6 +676,11 @@ public final class EvaluationMatchRunner {
             if (edaxLevel < 0 || edaxLevel > 60) {
                 throw new IllegalArgumentException("edaxLevel must be 0..60");
             }
+            if (ponderMillis < 0L || ponderMillis > 8000L) {
+                throw new IllegalArgumentException(
+                    "ponderMillis must be 0..8000"
+                );
+            }
             return new Settings(
                 modelPath,
                 opponent,
@@ -628,7 +690,8 @@ public final class EvaluationMatchRunner {
                 maxDepth,
                 threads,
                 edaxLevel,
-                openingSeed
+                openingSeed,
+                ponderMillis
             );
         }
 
