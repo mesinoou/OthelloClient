@@ -1,0 +1,97 @@
+{
+  "name": "eval-003-hybrid-filled-cuda-e80",
+  "generated_at_utc": "2026-07-22T14:34:55.745191+00:00",
+  "dataset": "combined-evaluation-v4",
+  "code": "9249d36",
+  "training": {
+    "loss": "hybrid",
+    "label": "filled",
+    "margin_loss_weight": 1.0,
+    "huber_delta": 0.25,
+    "wld_logit_scale": 4.0,
+    "epochs": 80,
+    "patience": 10,
+    "batch_size": 4096,
+    "train_metrics_samples": 262144,
+    "learning_rate": 0.001,
+    "l2": 0.00001,
+    "seed": 20260720,
+    "amp": true,
+    "elapsed_seconds": 1699.8,
+    "backend": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "gpu": "NVIDIA GeForce RTX 3070 Ti"
+    }
+  },
+  "phases": [
+    {
+      "phase": 0,
+      "epochs_trained": 42,
+      "best_epoch": 32,
+      "best_validation_loss": 0.7732815536773732,
+      "test_mse": 0.12165473344392402,
+      "test_mae": 0.27556004321981525,
+      "test_wld_log_loss": 0.5997242348100442,
+      "test_wld_brier": 0.18850886046870935
+    },
+    {
+      "phase": 1,
+      "epochs_trained": 56,
+      "best_epoch": 46,
+      "best_validation_loss": 0.6801533695131018,
+      "test_mse": 0.08499895251176239,
+      "test_mae": 0.2272264845795002,
+      "test_wld_log_loss": 0.5367260686089672,
+      "test_wld_brier": 0.16627452161416031
+    },
+    {
+      "phase": 2,
+      "epochs_trained": 59,
+      "best_epoch": 49,
+      "best_validation_loss": 0.5682239305289462,
+      "test_mse": 0.056483435318771036,
+      "test_mae": 0.1831783102746271,
+      "test_wld_log_loss": 0.4531353868046034,
+      "test_wld_brier": 0.13187014092297145
+    },
+    {
+      "phase": 3,
+      "epochs_trained": 80,
+      "best_epoch": 80,
+      "best_validation_loss": 0.4712195144653015,
+      "test_mse": 0.038407094287224455,
+      "test_mae": 0.1533602794000416,
+      "test_wld_log_loss": 0.38792956294191044,
+      "test_wld_brier": 0.10589161117513517
+    }
+  ],
+  "quantization": {
+    "dtype": "int16",
+    "score_scale": 6400,
+    "score_divisor": 1,
+    "maximum_absolute_score_bound": 80478,
+    "clipped_entries": 0,
+    "java_test": "PASS",
+    "java_benchmark_ns_per_eval": 412.8,
+    "java_benchmark_evals_per_second": 2422682
+  },
+  "files": {
+    "evaluation-tables.bin": {
+      "bytes": 1405604,
+      "sha256": "11857c5b8d0f8433c2c6e6e696ada757ba6beb6452369ad18e130275b9d18187"
+    },
+    "evaluation-tables.npz": {
+      "bytes": 1120722,
+      "sha256": "df8201827fbb0e14a23b9768576adc476cc357d0f63e43ad8f226f5b9a1a8926"
+    },
+    "model-float.npz": {
+      "bytes": 114802,
+      "sha256": "6810925ccd6f16c9116dc58c3518d0955d0800d4c4312f34f0cd42baee7cb61c"
+    },
+    "metadata.json": {
+      "bytes": 138047,
+      "sha256": "76a18040076e21230559f5345e2ba5e7d7bdd671f5b588b11a2b987e3f583e24"
+    }
+  }
+}
