@@ -1,6 +1,6 @@
 # OthelloClient
 
-TCP通信でOthelloサーバーに接続し、ゲーム開始から終了まで自動対局するJavaクライアントである。`v0.1.0`は、今後の探索・評価関数・定石改良を比較するための初回ベースラインとする。
+TCP通信でOthelloサーバーに接続し、ゲーム開始から終了まで自動対局するJavaクライアントである。`v1.0.0`は、学習済み評価と採用済み探索改良、実行環境自動調整、任意の相手手番探索を統合した最初の競技用基準版である。
 
 ## 現在の構成
 
@@ -44,7 +44,7 @@ java -jar OthelloServer.jar -port 25033 -timeout 10 -debug -trans
 
 ```powershell
 java -cp .build OthelloClient 127.0.0.1 25033 Player auto 8000 `
-  .training/models/pattern-evaluation-v2/evaluation-tables.bin --tt auto `
+  data/evaluation-tables.bin --tt auto `
   --ponder on --ponder-ratio 0.8
 ```
 
@@ -52,7 +52,7 @@ java -cp .build OthelloClient 127.0.0.1 25033 Player auto 8000 `
 
 ```powershell
 java -cp .build OthelloClient 127.0.0.1 25033 Player 4 8000 `
-  .training/models/pattern-evaluation-v2/evaluation-tables.bin
+  data/evaluation-tables.bin
 ```
 
 引数は順に `host port nickname threads timeMillis evaluationModel` である。`threads`は正整数または`auto`で、省略時は`auto`となる。TT entry数は`--tt auto|N`で指定し、CLI、`-Dothello.tt.entries=N`、ヒープ上限からの自動算出の順で優先する。`N`には2の累乗を指定する。自動診断は接続前に最大2秒で完了し、選択したthreads、TT容量、各候補の測定値を標準出力へ表示する。
@@ -60,6 +60,8 @@ java -cp .build OthelloClient 127.0.0.1 25033 Player 4 8000 `
 相手手番探索は`--ponder on|off`で指定し、既定値は安全側の`off`である。`--ponder-ratio R`は自手思考時間に対する上限比で、既定値は`0.8`、実時間上限は8,000 msとなる。自分のPUT後は更新済みBOARDを受信するまで開始せず、ponder結果からPUTを送信することはない。終了時の`相手手番探索集計`で停止p95、予測一致、TT hit、誤PUT数を確認できる。
 
 第6引数を省略した場合は、`-Dothello.eval.file=<path>`、環境変数`OTHELLO_EVAL_FILE`、`data/evaluation-tables.bin`の順に探す。いずれも存在しなければ従来の手設計評価を使用する。起動時の`評価関数:`行で実際に選ばれた評価器を確認できる。
+
+v1.0.0の性能検証に用いたモデルのSHA-256は`6E118C928729E003E89742D3B57FE6ED35FA9233A38DBE8AF852041EBEE39457`である。モデル本体はGit追跡外のため、`data/evaluation-tables.bin`へ配置し、`data/evaluation-model-v1.0.0.sha256`と照合する。
 
 ## Edaxとの比較
 
@@ -171,4 +173,4 @@ python -m training.train_model
 - コミット: 計測基盤、アルゴリズム変更、評価結果を分離し、採用が決まるまで共有履歴をforce pushしない
 - ローカルモデル: バイナリは追跡せず、モデルSHA-256と生成条件を評価結果へ記録
 
-初回ベースラインは `v0.1.0` である。
+競技用基準版は`v1.0.0`、初回ネットワーククライアントのベースラインは`v0.1.0`である。
