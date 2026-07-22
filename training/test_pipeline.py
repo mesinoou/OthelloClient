@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import struct
 import io
 from pathlib import Path
@@ -32,10 +33,14 @@ from training.export_java_model import (
     reverse_ternary_indices,
 )
 from training.train_model import (
+    PAIR_BRANCHES,
+    SCALAR_BRANCHES,
     PatternModel,
     ProgressBar,
+    evaluate_quantized,
     labels,
     objective_values_and_gradient,
+    pattern_table_key,
     swap_pattern_colors,
     wld_targets,
 )
@@ -371,6 +376,65 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
                 struct.unpack_from(">h", binary, first_table_offset + 2)[0],
             )
             self.assertEqual(1, result["score_divisor"])
+
+    def test_quantized_evaluation_applies_java_score_divisor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tables_path = Path(temporary) / "evaluation-tables.npz"
+            payload: dict[str, np.ndarray] = {
+                "score_scale": np.asarray((100,), dtype=np.int32),
+                "phase_bias": np.asarray((100, 0, 0, 0), dtype=np.int32),
+            }
+            data: dict[str, np.ndarray] = {
+                "label_filled": np.asarray((16,), dtype=np.int8),
+                "label_disc": np.asarray((16,), dtype=np.int8),
+                "player": np.asarray((BLACK,), dtype=np.int8),
+                "sample_count": np.asarray((1,), dtype=np.uint32),
+                "black_wins": np.asarray((1,), dtype=np.uint64),
+                "draws": np.asarray((0,), dtype=np.uint64),
+                "white_wins": np.asarray((0,), dtype=np.uint64),
+            }
+            for name, group in PATTERN_GROUPS.items():
+                data[name] = np.zeros(
+                    (1, group.instances),
+                    dtype=np.int32,
+                )
+                for class_id in range(group.class_count or 1):
+                    payload[pattern_table_key(0, name, class_id)] = np.zeros(
+                        3 ** group.size_for_class(class_id),
+                        dtype=np.int16,
+                    )
+            for name, specs in PAIR_BRANCHES.items():
+                for field, _, _ in specs:
+                    data[field] = np.zeros(1, dtype=np.int8)
+                payload[f"phase0_{name}"] = np.zeros(
+                    (65, 65),
+                    dtype=np.int16,
+                )
+            for name, (minimum, maximum, _) in SCALAR_BRANCHES.items():
+                data[name] = np.zeros(1, dtype=np.int8)
+                payload[f"phase0_{name}"] = np.zeros(
+                    maximum - minimum + 1,
+                    dtype=np.int16,
+                )
+            np.savez_compressed(tables_path, **payload)
+            args = argparse.Namespace(
+                label="filled",
+                loss="mse",
+                margin_loss_weight=1.0,
+                huber_delta=0.25,
+                wld_logit_scale=4.0,
+            )
+
+            metrics = evaluate_quantized(
+                tables_path,
+                data,
+                np.asarray((0,)),
+                0,
+                args,
+                score_divisor=2,
+            )
+
+            self.assertAlmostEqual(0.0625, metrics.mse)
 
 
 if __name__ == "__main__":

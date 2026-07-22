@@ -1453,6 +1453,7 @@ def evaluate_quantized(
     indices: np.ndarray,
     phase: int,
     args: argparse.Namespace,
+    score_divisor: int = 1,
 ) -> ObjectiveMetrics:
     with np.load(tables_path, allow_pickle=False) as tables:
         score = np.full(
@@ -1484,7 +1485,9 @@ def evaluate_quantized(
             score += tables[f"phase{phase}_{name}"][values - minimum].astype(
                 np.int64
             )
-        prediction = score.astype(np.float32) / float(tables["score_scale"][0])
+        prediction = score.astype(np.float32) / (
+            float(tables["score_scale"][0]) * score_divisor
+        )
     accumulator = ObjectiveAccumulator()
     accumulator.add(
         prediction[:, None],
@@ -1808,6 +1811,7 @@ def main() -> int:
                 test_indices,
                 phase,
                 args,
+                int(java_export["score_divisor"]),
             )
             test_result = {
                 "phase": phase,
