@@ -47,6 +47,8 @@ SCALAR_BRANCHES = {
 AUXILIARY_BRANCH_NAMES = (*PAIR_BRANCHES, *SCALAR_BRANCHES)
 DEFAULT_PHASE_STARTS = (20, 30, 40, 50)
 DEFAULT_SCORE_SCALE = 6400
+WLD_ARRAYS = {"sample_count", "black_wins", "draws", "white_wins"}
+LOSS_CHOICES = ("mse", "huber", "wld", "hybrid")
 REQUIRED_ARRAYS = {
     "player",
     "ply",
@@ -397,6 +399,78 @@ class Metrics:
     mae: float
 
 
+@dataclass(frozen=True)
+class ObjectiveMetrics:
+    loss: float
+    mse: float
+    mae: float
+    wld_log_loss: float | None
+    wld_brier: float | None
+
+
+class ObjectiveAccumulator:
+    def __init__(self) -> None:
+        self.loss = 0.0
+        self.squared_error = 0.0
+        self.absolute_error = 0.0
+        self.wld_log_loss = 0.0
+        self.wld_brier = 0.0
+        self.count = 0
+        self.wld_count = 0
+
+    def add(
+        self,
+        prediction: np.ndarray,
+        margin_target: np.ndarray,
+        wld_target: np.ndarray | None,
+        loss_name: str,
+        margin_loss_weight: float,
+        huber_delta: float,
+        wld_logit_scale: float,
+    ) -> None:
+        loss_values, _ = objective_values_and_gradient(
+            prediction,
+            margin_target,
+            wld_target,
+            loss_name,
+            margin_loss_weight,
+            huber_delta,
+            wld_logit_scale,
+        )
+        margin_prediction = prediction_to_margin(prediction, loss_name)
+        difference = margin_prediction - margin_target
+        self.loss += float(loss_values.sum())
+        self.squared_error += float(np.square(difference).sum())
+        self.absolute_error += float(np.abs(difference).sum())
+        self.count += len(prediction)
+        if wld_target is not None:
+            probability = prediction_to_win_probability(
+                prediction,
+                loss_name,
+                wld_logit_scale,
+            )
+            clipped = np.clip(probability, 1.0e-7, 1.0 - 1.0e-7)
+            self.wld_log_loss += float(
+                (
+                    -wld_target * np.log(clipped)
+                    - (1.0 - wld_target) * np.log(1.0 - clipped)
+                ).sum()
+            )
+            self.wld_brier += float(np.square(probability - wld_target).sum())
+            self.wld_count += len(prediction)
+
+    def finish(self) -> ObjectiveMetrics:
+        if self.count == 0:
+            raise ValueError("cannot calculate metrics for an empty selection")
+        return ObjectiveMetrics(
+            self.loss / self.count,
+            self.squared_error / self.count,
+            self.absolute_error / self.count,
+            None if self.wld_count == 0 else self.wld_log_loss / self.wld_count,
+            None if self.wld_count == 0 else self.wld_brier / self.wld_count,
+        )
+
+
 class ProgressBar:
     def __init__(
         self,
@@ -445,6 +519,30 @@ def load_dataset(path: Path) -> dict[str, np.ndarray]:
                 f"{sorted(missing)}. Materialize the current dataset."
             )
         return {name: archive[name] for name in archive.files}
+
+
+def validate_objective_data(
+    data: dict[str, np.ndarray],
+    loss_name: str,
+    path: Path,
+) -> None:
+    if not requires_wld(loss_name):
+        return
+    missing = WLD_ARRAYS - set(data)
+    if missing:
+        raise ValueError(
+            f"{path}: loss {loss_name} requires {sorted(missing)}"
+        )
+    observations = (
+        data["black_wins"].astype(np.uint64)
+        + data["draws"].astype(np.uint64)
+        + data["white_wins"].astype(np.uint64)
+    )
+    if np.any(observations == 0) or not np.array_equal(
+        observations,
+        data["sample_count"].astype(np.uint64),
+    ):
+        raise ValueError(f"{path}: invalid W/D/L observation counts")
 
 
 def phase_ids(ply: np.ndarray, phase_starts: tuple[int, ...]) -> np.ndarray:
@@ -502,6 +600,139 @@ def label_array_name(label_name: str) -> str:
     }[label_name]
 
 
+def wld_targets(
+    data: dict[str, np.ndarray],
+    indices: np.ndarray,
+) -> np.ndarray | None:
+    if not WLD_ARRAYS.issubset(data):
+        return None
+    black_wins = data["black_wins"][indices].astype(np.float64)
+    draws = data["draws"][indices].astype(np.float64)
+    white_wins = data["white_wins"][indices].astype(np.float64)
+    observations = black_wins + draws + white_wins
+    if np.any(observations <= 0.0):
+        raise ValueError("WLD counts must contain at least one observation")
+    black_score = (black_wins + 0.5 * draws) / observations
+    player = data["player"][indices]
+    result = np.where(player == 1, black_score, 1.0 - black_score)
+    return result.astype(np.float32)[:, None]
+
+
+def requires_wld(loss_name: str) -> bool:
+    return loss_name in ("wld", "hybrid")
+
+
+def _sigmoid(values: np.ndarray) -> np.ndarray:
+    result = np.empty_like(values, dtype=np.float32)
+    nonnegative = values >= 0.0
+    result[nonnegative] = 1.0 / (1.0 + np.exp(-values[nonnegative]))
+    exponent = np.exp(values[~nonnegative])
+    result[~nonnegative] = exponent / (1.0 + exponent)
+    return result
+
+
+def _smooth_l1_values_and_gradient(
+    difference: np.ndarray,
+    delta: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    absolute = np.abs(difference)
+    quadratic = absolute < delta
+    values = np.where(
+        quadratic,
+        0.5 * np.square(difference) / delta,
+        absolute - 0.5 * delta,
+    )
+    gradient = np.where(quadratic, difference / delta, np.sign(difference))
+    return values, gradient.astype(np.float32, copy=False)
+
+
+def objective_values_and_gradient(
+    prediction: np.ndarray,
+    margin_target: np.ndarray,
+    wld_target: np.ndarray | None,
+    loss_name: str,
+    margin_loss_weight: float,
+    huber_delta: float,
+    wld_logit_scale: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    if loss_name == "mse":
+        difference = prediction - margin_target
+        return np.square(difference), 2.0 * difference
+    if loss_name == "huber":
+        return _smooth_l1_values_and_gradient(
+            prediction - margin_target,
+            huber_delta,
+        )
+    if wld_target is None:
+        raise ValueError(
+            f"loss {loss_name} requires sample_count and W/D/L arrays"
+        )
+
+    logits = prediction if loss_name == "wld" else prediction * wld_logit_scale
+    probability = _sigmoid(logits)
+    bce = (
+        np.maximum(logits, 0.0)
+        - logits * wld_target
+        + np.log1p(np.exp(-np.abs(logits)))
+    )
+    gradient = probability - wld_target
+    if loss_name == "wld":
+        return bce, gradient
+    if loss_name != "hybrid":
+        raise ValueError(f"unknown loss: {loss_name}")
+
+    margin_values, margin_gradient = _smooth_l1_values_and_gradient(
+        prediction - margin_target,
+        huber_delta,
+    )
+    return (
+        bce + margin_loss_weight * margin_values,
+        wld_logit_scale * gradient + margin_loss_weight * margin_gradient,
+    )
+
+
+def prediction_to_margin(
+    prediction: np.ndarray,
+    loss_name: str,
+) -> np.ndarray:
+    return np.tanh(prediction) if loss_name == "wld" else prediction
+
+
+def prediction_to_win_probability(
+    prediction: np.ndarray,
+    loss_name: str,
+    wld_logit_scale: float,
+) -> np.ndarray:
+    if loss_name == "wld":
+        return _sigmoid(prediction)
+    if loss_name == "hybrid":
+        return _sigmoid(prediction * wld_logit_scale)
+    return np.clip((prediction + 1.0) * 0.5, 0.0, 1.0)
+
+
+def objective_epoch_result(
+    epoch: int,
+    train_metrics: ObjectiveMetrics,
+    validation_metrics: ObjectiveMetrics,
+) -> dict[str, float]:
+    result = {
+        "epoch": epoch,
+        "train_loss": train_metrics.loss,
+        "train_mse": train_metrics.mse,
+        "train_mae": train_metrics.mae,
+        "validation_loss": validation_metrics.loss,
+        "validation_mse": validation_metrics.mse,
+        "validation_mae": validation_metrics.mae,
+    }
+    if train_metrics.wld_log_loss is not None:
+        result["train_wld_log_loss"] = train_metrics.wld_log_loss
+        result["train_wld_brier"] = train_metrics.wld_brier
+    if validation_metrics.wld_log_loss is not None:
+        result["validation_wld_log_loss"] = validation_metrics.wld_log_loss
+        result["validation_wld_brier"] = validation_metrics.wld_brier
+    return result
+
+
 def evaluate(
     model: PatternModel,
     data: dict[str, np.ndarray],
@@ -532,6 +763,40 @@ def evaluate(
         count += len(batch)
         progress.update(batch_number)
     return Metrics(squared_error / count, absolute_error / count)
+
+
+def evaluate_objective(
+    model: PatternModel,
+    data: dict[str, np.ndarray],
+    indices: np.ndarray,
+    args: argparse.Namespace,
+    progress_label: str | None = None,
+    progress_enabled: bool = False,
+) -> ObjectiveMetrics:
+    accumulator = ObjectiveAccumulator()
+    batches = max(math.ceil(len(indices) / args.batch_size), 1)
+    progress = ProgressBar(
+        progress_label or "evaluate objective",
+        batches,
+        progress_enabled and progress_label is not None,
+    )
+    for batch_number, start in enumerate(
+        range(0, len(indices), args.batch_size),
+        start=1,
+    ):
+        batch = indices[start : start + args.batch_size]
+        prediction, _ = model.forward(data, batch, cache=False)
+        accumulator.add(
+            prediction,
+            labels(data, batch, args.label),
+            wld_targets(data, batch),
+            args.loss,
+            args.margin_loss_weight,
+            args.huber_delta,
+            args.wld_logit_scale,
+        )
+        progress.update(batch_number)
+    return accumulator.finish()
 
 
 def train_phase_numpy(
@@ -571,42 +836,46 @@ def train_phase_numpy(
         ):
             batch = shuffled[start : start + args.batch_size]
             prediction, cache = model.forward(train, batch, cache=True)
-            difference = prediction - labels(train, batch, args.label)
-            output_gradient = (2.0 / len(batch)) * difference
+            _, output_gradient = objective_values_and_gradient(
+                prediction,
+                labels(train, batch, args.label),
+                wld_targets(train, batch),
+                args.loss,
+                args.margin_loss_weight,
+                args.huber_delta,
+                args.wld_logit_scale,
+            )
+            output_gradient /= len(batch)
             gradients = model.backward(output_gradient, cache, args.l2)
             optimizer.step(model.parameters, gradients)
             progress.update(batch_number)
 
-        train_metrics = evaluate(
+        train_metrics = evaluate_objective(
             model,
             train,
             train_metric_indices,
-            args.label,
-            args.batch_size,
+            args,
             f"phase {phase} epoch {epoch} train metrics",
             not args.no_progress,
         )
-        validation_metrics = evaluate(
+        validation_metrics = evaluate_objective(
             model,
             validation,
             validation_indices,
-            args.label,
-            args.batch_size,
+            args,
             f"phase {phase} epoch {epoch} validation",
             not args.no_progress,
         )
-        epoch_result = {
-            "epoch": epoch,
-            "train_mse": train_metrics.mse,
-            "train_mae": train_metrics.mae,
-            "validation_mse": validation_metrics.mse,
-            "validation_mae": validation_metrics.mae,
-        }
+        epoch_result = objective_epoch_result(
+            epoch,
+            train_metrics,
+            validation_metrics,
+        )
         history.append(epoch_result)
         print(f"phase {phase}: {json.dumps(epoch_result)}")
 
-        if validation_metrics.mse < best_loss - 1.0e-7:
-            best_loss = validation_metrics.mse
+        if validation_metrics.loss < best_loss - 1.0e-7:
+            best_loss = validation_metrics.loss
             best_snapshot = model.snapshot()
             stale_epochs = 0
         else:
@@ -760,6 +1029,7 @@ def torch_data_fields(data: dict[str, Any]) -> set[str]:
         for name in ("teacher_disc", "teacher_filled")
         if name in data
     }
+    fields |= WLD_ARRAYS.intersection(data)
     return fields
 
 
@@ -793,6 +1063,72 @@ def torch_labels(batch: dict[str, Any], label_name: str) -> Any:
     return (
         batch[key].float() * batch["player"].float()
     )[:, None] / 64.0
+
+
+def torch_wld_targets(batch: dict[str, Any]) -> Any | None:
+    if not WLD_ARRAYS.issubset(batch):
+        return None
+    black_wins = batch["black_wins"].float()
+    draws = batch["draws"].float()
+    white_wins = batch["white_wins"].float()
+    observations = black_wins + draws + white_wins
+    black_score = (black_wins + 0.5 * draws) / observations
+    result = torch.where(
+        batch["player"] == 1,
+        black_score,
+        1.0 - black_score,
+    )
+    return result[:, None]
+
+
+def torch_smooth_l1(values: Any, delta: float) -> Any:
+    absolute = torch.abs(values)
+    return torch.where(
+        absolute < delta,
+        0.5 * torch.square(values) / delta,
+        absolute - 0.5 * delta,
+    )
+
+
+def torch_objective_loss(
+    prediction: Any,
+    batch: dict[str, Any],
+    args: argparse.Namespace,
+) -> Any:
+    margin_target = torch_labels(batch, args.label)
+    if args.loss == "mse":
+        return torch.square(prediction - margin_target).mean()
+    if args.loss == "huber":
+        return torch_smooth_l1(
+            prediction - margin_target,
+            args.huber_delta,
+        ).mean()
+
+    wld_target = torch_wld_targets(batch)
+    if wld_target is None:
+        raise ValueError(
+            f"loss {args.loss} requires sample_count and W/D/L arrays"
+        )
+    logits = (
+        prediction
+        if args.loss == "wld"
+        else prediction * args.wld_logit_scale
+    )
+    bce = (
+        torch.clamp(logits, min=0.0)
+        - logits * wld_target
+        + torch.log1p(torch.exp(-torch.abs(logits)))
+    )
+    if args.loss == "wld":
+        return bce.mean()
+    if args.loss != "hybrid":
+        raise ValueError(f"unknown loss: {args.loss}")
+    margin_difference = prediction - margin_target
+    margin_loss = torch_smooth_l1(
+        margin_difference,
+        args.huber_delta,
+    )
+    return (bce + args.margin_loss_weight * margin_loss).mean()
 
 
 def evaluate_torch(
@@ -829,31 +1165,40 @@ def evaluate_torch(
 def evaluate_torch_cached(
     model: Any,
     data: dict[str, Any],
-    label_name: str,
-    batch_size: int,
+    args: argparse.Namespace,
     progress_label: str,
     progress_enabled: bool,
-) -> Metrics:
+) -> ObjectiveMetrics:
     model.eval()
-    squared_error = 0.0
-    absolute_error = 0.0
+    accumulator = ObjectiveAccumulator()
     count = len(data["player"])
-    batches = max(math.ceil(count / batch_size), 1)
+    batches = max(math.ceil(count / args.batch_size), 1)
     progress = ProgressBar(progress_label, batches, progress_enabled)
     with torch.no_grad():
         for batch_number, start in enumerate(
-            range(0, count, batch_size),
+            range(0, count, args.batch_size),
             start=1,
         ):
             batch = {
-                name: values[start : start + batch_size]
+                name: values[start : start + args.batch_size]
                 for name, values in data.items()
             }
-            difference = model(batch) - torch_labels(batch, label_name)
-            squared_error += float(torch.square(difference).sum().item())
-            absolute_error += float(torch.abs(difference).sum().item())
+            prediction = model(batch)
+            margin_target = torch_labels(batch, args.label)
+            wld_target = torch_wld_targets(batch)
+            accumulator.add(
+                prediction.detach().float().cpu().numpy(),
+                margin_target.detach().float().cpu().numpy(),
+                None
+                if wld_target is None
+                else wld_target.detach().float().cpu().numpy(),
+                args.loss,
+                args.margin_loss_weight,
+                args.huber_delta,
+                args.wld_logit_scale,
+            )
             progress.update(batch_number)
-    return Metrics(squared_error / count, absolute_error / count)
+    return accumulator.finish()
 
 
 def train_phase_torch(
@@ -935,8 +1280,7 @@ def train_phase_torch(
                 device_type=device.type,
                 enabled=use_amp,
             ):
-                difference = model(batch) - torch_labels(batch, args.label)
-                loss = torch.square(difference).mean()
+                loss = torch_objective_loss(model(batch), batch, args)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -945,30 +1289,26 @@ def train_phase_torch(
         train_metrics = evaluate_torch_cached(
             model,
             train_metrics_cache,
-            args.label,
-            args.batch_size,
+            args,
             f"phase {phase} epoch {epoch} train metrics",
             not args.no_progress,
         )
         validation_metrics = evaluate_torch_cached(
             model,
             validation_cache,
-            args.label,
-            args.batch_size,
+            args,
             f"phase {phase} epoch {epoch} validation",
             not args.no_progress,
         )
-        epoch_result = {
-            "epoch": epoch,
-            "train_mse": train_metrics.mse,
-            "train_mae": train_metrics.mae,
-            "validation_mse": validation_metrics.mse,
-            "validation_mae": validation_metrics.mae,
-        }
+        epoch_result = objective_epoch_result(
+            epoch,
+            train_metrics,
+            validation_metrics,
+        )
         history.append(epoch_result)
         print(f"phase {phase}: {json.dumps(epoch_result)}")
-        if validation_metrics.mse < best_loss - 1.0e-7:
-            best_loss = validation_metrics.mse
+        if validation_metrics.loss < best_loss - 1.0e-7:
+            best_loss = validation_metrics.loss
             best_state = {
                 name: value.detach().cpu().clone()
                 for name, value in model.state_dict().items()
@@ -1112,8 +1452,8 @@ def evaluate_quantized(
     data: dict[str, np.ndarray],
     indices: np.ndarray,
     phase: int,
-    label_name: str,
-) -> Metrics:
+    args: argparse.Namespace,
+) -> ObjectiveMetrics:
     with np.load(tables_path, allow_pickle=False) as tables:
         score = np.full(
             len(indices),
@@ -1145,12 +1485,17 @@ def evaluate_quantized(
                 np.int64
             )
         prediction = score.astype(np.float32) / float(tables["score_scale"][0])
-    expected = labels(data, indices, label_name)[:, 0]
-    difference = prediction - expected
-    return Metrics(
-        float(np.square(difference).mean()),
-        float(np.abs(difference).mean()),
+    accumulator = ObjectiveAccumulator()
+    accumulator.add(
+        prediction[:, None],
+        labels(data, indices, args.label),
+        wld_targets(data, indices),
+        args.loss,
+        args.margin_loss_weight,
+        args.huber_delta,
+        args.wld_logit_scale,
     )
+    return accumulator.finish()
 
 
 def parse_args() -> argparse.Namespace:
@@ -1208,6 +1553,30 @@ def parse_args() -> argparse.Namespace:
         help="empirical or WTHOR-theoretical terminal score target",
     )
     parser.add_argument(
+        "--loss",
+        choices=LOSS_CHOICES,
+        default="mse",
+        help="training objective: margin MSE/Huber, WLD BCE, or hybrid",
+    )
+    parser.add_argument(
+        "--margin-loss-weight",
+        type=float,
+        default=1.0,
+        help="hybrid-loss weight for the normalized margin Huber term",
+    )
+    parser.add_argument(
+        "--huber-delta",
+        type=float,
+        default=0.25,
+        help="Smooth L1 transition for normalized terminal margin",
+    )
+    parser.add_argument(
+        "--wld-logit-scale",
+        type=float,
+        default=4.0,
+        help="hybrid-loss mapping from normalized margin to WLD logit",
+    )
+    parser.add_argument(
         "--phase-starts",
         default="20,30,40,50",
         help="comma-separated starts for the four phase models",
@@ -1261,6 +1630,15 @@ def validate_args(args: argparse.Namespace) -> tuple[int, ...]:
         raise ValueError("epochs, batch-size, and patience must be positive")
     if args.learning_rate <= 0.0 or args.l2 < 0.0:
         raise ValueError("learning-rate must be positive and l2 non-negative")
+    if (
+        args.margin_loss_weight < 0.0
+        or args.huber_delta <= 0.0
+        or args.wld_logit_scale <= 0.0
+    ):
+        raise ValueError(
+            "margin-loss-weight must be non-negative; huber-delta and "
+            "wld-logit-scale must be positive"
+        )
     if args.score_scale < 1:
         raise ValueError("score-scale must be positive")
     if args.max_samples_per_phase is not None and args.max_samples_per_phase < 1:
@@ -1321,9 +1699,15 @@ def main() -> int:
             )
         print(f"training backend: {json.dumps(backend_details)}")
         print(f"load dataset: {args.dataset_dir}")
-        train = load_dataset(args.dataset_dir / "train.npz")
-        validation = load_dataset(args.dataset_dir / "validation.npz")
-        test = load_dataset(args.dataset_dir / "test.npz")
+        train_path = args.dataset_dir / "train.npz"
+        validation_path = args.dataset_dir / "validation.npz"
+        test_path = args.dataset_dir / "test.npz"
+        train = load_dataset(train_path)
+        validation = load_dataset(validation_path)
+        test = load_dataset(test_path)
+        validate_objective_data(train, args.loss, train_path)
+        validate_objective_data(validation, args.loss, validation_path)
+        validate_objective_data(test, args.loss, test_path)
         if args.output_dir.exists():
             shutil.rmtree(args.output_dir)
         args.output_dir.mkdir(parents=True)
@@ -1410,12 +1794,11 @@ def main() -> int:
                 args.max_samples_per_phase,
                 rng,
             )
-            float_metrics = evaluate(
+            float_metrics = evaluate_objective(
                 models[phase],
                 test,
                 test_indices,
-                args.label,
-                args.batch_size,
+                args,
                 f"phase {phase} float test",
                 not args.no_progress,
             )
@@ -1424,18 +1807,30 @@ def main() -> int:
                 test,
                 test_indices,
                 phase,
-                args.label,
+                args,
             )
-            test_results.append(
-                {
-                    "phase": phase,
-                    "samples": len(test_indices),
-                    "float_mse": float_metrics.mse,
-                    "float_mae": float_metrics.mae,
-                    "quantized_mse": quantized_metrics.mse,
-                    "quantized_mae": quantized_metrics.mae,
-                }
-            )
+            test_result = {
+                "phase": phase,
+                "samples": len(test_indices),
+                "float_loss": float_metrics.loss,
+                "float_mse": float_metrics.mse,
+                "float_mae": float_metrics.mae,
+                "quantized_loss": quantized_metrics.loss,
+                "quantized_mse": quantized_metrics.mse,
+                "quantized_mae": quantized_metrics.mae,
+            }
+            if float_metrics.wld_log_loss is not None:
+                test_result["float_wld_log_loss"] = (
+                    float_metrics.wld_log_loss
+                )
+                test_result["float_wld_brier"] = float_metrics.wld_brier
+                test_result["quantized_wld_log_loss"] = (
+                    quantized_metrics.wld_log_loss
+                )
+                test_result["quantized_wld_brier"] = (
+                    quantized_metrics.wld_brier
+                )
+            test_results.append(test_result)
 
         metadata = {
             "model_format": 2,
@@ -1465,8 +1860,11 @@ def main() -> int:
             },
             "training": {
                 "optimizer": "Adam",
-                "loss": "mean squared error",
+                "loss": args.loss,
                 "label": args.label,
+                "margin_loss_weight": args.margin_loss_weight,
+                "huber_delta": args.huber_delta,
+                "wld_logit_scale": args.wld_logit_scale,
                 "seed": args.seed,
                 "phase_starts": phase_starts,
                 "batch_size": args.batch_size,

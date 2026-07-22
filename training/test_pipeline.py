@@ -35,7 +35,9 @@ from training.train_model import (
     PatternModel,
     ProgressBar,
     labels,
+    objective_values_and_gradient,
     swap_pattern_colors,
+    wld_targets,
 )
 from training.wthor import read_wtb
 from training.build_corpus import (
@@ -284,6 +286,46 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         np.testing.assert_allclose(actual, (0.25, -0.25))
         teacher = labels(data, np.asarray([0, 1]), "teacher-filled")[:, 0]
         np.testing.assert_allclose(teacher, (0.5, -0.5))
+
+    def test_wld_targets_use_soft_side_to_move_score(self) -> None:
+        data = {
+            "player": np.asarray([BLACK, WHITE], dtype=np.int8),
+            "sample_count": np.asarray([4, 4], dtype=np.uint32),
+            "black_wins": np.asarray([3, 3], dtype=np.uint64),
+            "draws": np.asarray([1, 1], dtype=np.uint64),
+            "white_wins": np.asarray([0, 0], dtype=np.uint64),
+        }
+        actual = wld_targets(data, np.asarray([0, 1]))[:, 0]
+        np.testing.assert_allclose(actual, (0.875, 0.125))
+
+    def test_objectives_preserve_color_antisymmetry(self) -> None:
+        prediction = np.asarray([[0.7], [-0.7]], dtype=np.float32)
+        margin = np.asarray([[0.4], [-0.4]], dtype=np.float32)
+        wld = np.asarray([[0.8], [0.2]], dtype=np.float32)
+        for loss_name in ("mse", "huber", "wld", "hybrid"):
+            values, gradient = objective_values_and_gradient(
+                prediction,
+                margin,
+                wld,
+                loss_name,
+                1.0,
+                0.25,
+                4.0,
+            )
+            self.assertTrue(np.isfinite(values).all(), loss_name)
+            self.assertTrue(np.isfinite(gradient).all(), loss_name)
+            self.assertAlmostEqual(
+                float(values[0, 0]),
+                float(values[1, 0]),
+                places=6,
+                msg=loss_name,
+            )
+            self.assertAlmostEqual(
+                float(gradient[0, 0]),
+                -float(gradient[1, 0]),
+                places=6,
+                msg=loss_name,
+            )
 
     def test_progress_bar_reports_completion(self) -> None:
         output = io.StringIO()
