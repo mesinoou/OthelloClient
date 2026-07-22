@@ -61,6 +61,18 @@ public final class OthelloAI {
         return searchEngine.search(position, color, limits);
     }
 
+    public SearchResult ponder(
+        BitBoardPosition position,
+        int color,
+        SearchLimits limits
+    ) {
+        return searchEngine.search(position, color, limits);
+    }
+
+    boolean hasTransposition(BitBoardPosition position, int color) {
+        return searchEngine.hasTransposition(position, color);
+    }
+
     public int openingBookSize() {
         return openingBook.size();
     }

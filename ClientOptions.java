@@ -7,6 +7,7 @@ final class ClientOptions {
     static final int DEFAULT_PORT = 9999;
     static final String DEFAULT_NICKNAME = "Player";
     static final long DEFAULT_TIME_MILLIS = 8000L;
+    static final double DEFAULT_PONDER_RATIO = 0.80;
 
     final String host;
     final int port;
@@ -15,6 +16,8 @@ final class ClientOptions {
     final long timeMillis;
     final Path evaluationModel;
     final String ttSpec;
+    final boolean ponderEnabled;
+    final double ponderRatio;
 
     private ClientOptions(
         String host,
@@ -23,7 +26,9 @@ final class ClientOptions {
         String threadSpec,
         long timeMillis,
         Path evaluationModel,
-        String ttSpec
+        String ttSpec,
+        boolean ponderEnabled,
+        double ponderRatio
     ) {
         this.host = host;
         this.port = port;
@@ -32,6 +37,8 @@ final class ClientOptions {
         this.timeMillis = timeMillis;
         this.evaluationModel = evaluationModel;
         this.ttSpec = ttSpec;
+        this.ponderEnabled = ponderEnabled;
+        this.ponderRatio = ponderRatio;
     }
 
     static ClientOptions parse(String[] args) {
@@ -59,6 +66,8 @@ final class ClientOptions {
             ? Paths.get(args[5])
             : null;
         String ttSpec = null;
+        boolean ponderEnabled = false;
+        double ponderRatio = DEFAULT_PONDER_RATIO;
 
         for (int index = positionalCount; index < args.length; index++) {
             String option = args[index];
@@ -71,6 +80,29 @@ final class ClientOptions {
                 ttSpec = args[index];
             } else if (option.startsWith("--tt=")) {
                 ttSpec = option.substring("--tt=".length());
+            } else if ("--ponder".equals(option)) {
+                if (++index >= args.length) {
+                    throw new IllegalArgumentException(
+                        "--ponderにはonまたはoffが必要です。"
+                    );
+                }
+                ponderEnabled = parsePonder(args[index]);
+            } else if (option.startsWith("--ponder=")) {
+                ponderEnabled = parsePonder(
+                    option.substring("--ponder=".length())
+                );
+            } else if ("--ponder-ratio".equals(option)) {
+                if (++index >= args.length) {
+                    throw new IllegalArgumentException(
+                        "--ponder-ratioには0より大きく1以下の値が必要です。"
+                    );
+                }
+                ponderRatio = parseDouble(args[index], "ponder-ratio");
+            } else if (option.startsWith("--ponder-ratio=")) {
+                ponderRatio = parseDouble(
+                    option.substring("--ponder-ratio=".length()),
+                    "ponder-ratio"
+                );
             } else {
                 throw new IllegalArgumentException(
                     "未対応の起動オプションです: " + option
@@ -89,6 +121,11 @@ final class ClientOptions {
                 "threadsにはautoまたは正整数を指定してください。"
             );
         }
+        if (!(ponderRatio > 0.0) || ponderRatio > 1.0) {
+            throw new IllegalArgumentException(
+                "ponder-ratioは0より大きく1以下で指定してください。"
+            );
+        }
         return new ClientOptions(
             host,
             port,
@@ -96,7 +133,9 @@ final class ClientOptions {
             threadSpec,
             timeMillis,
             evaluationModel,
-            ttSpec
+            ttSpec,
+            ponderEnabled,
+            ponderRatio
         );
     }
 
@@ -104,7 +143,20 @@ final class ClientOptions {
         System.err.println(
             "使い方: java OthelloClient <host> <port> "
                 + "[nickname] [threads|auto] [timeMillis] "
-                + "[evaluationModel] [--tt auto|entries]"
+                + "[evaluationModel] [--tt auto|entries] "
+                + "[--ponder on|off] [--ponder-ratio 0..1]"
+        );
+    }
+
+    private static boolean parsePonder(String value) {
+        if ("on".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("off".equalsIgnoreCase(value)) {
+            return false;
+        }
+        throw new IllegalArgumentException(
+            "--ponderにはonまたはoffを指定してください。"
         );
     }
 
@@ -125,6 +177,17 @@ final class ClientOptions {
         } catch (NumberFormatException error) {
             throw new IllegalArgumentException(
                 name + "は整数で指定してください。",
+                error
+            );
+        }
+    }
+
+    private static double parseDouble(String value, String name) {
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException error) {
+            throw new IllegalArgumentException(
+                name + "は数値で指定してください。",
                 error
             );
         }
