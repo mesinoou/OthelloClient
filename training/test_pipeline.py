@@ -12,6 +12,7 @@ import numpy as np
 from training.othello import (
     BLACK,
     CORNERS,
+    Position,
     WHITE,
     apply_move,
     frontier_counts,
@@ -37,6 +38,12 @@ from training.train_model import (
     swap_pattern_colors,
 )
 from training.wthor import read_wtb
+from training.build_corpus import (
+    canonical_position_key,
+    load_wthor_registry,
+    transform_bitboard,
+)
+from training.materialize_dataset import aggregate_observations
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
@@ -74,15 +81,60 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         data = bytearray(16 + 68)
         struct.pack_into("<i", data, 4, 1)
         data[12] = 8
+        data[14] = 24
         data[16 + 6] = 40
+        data[16 + 7] = 35
         data[16 + 8] = 56
 
         games = read_wtb(bytes(data), "test.zip", "WTH_2099.WTB")
 
         self.assertEqual(1, len(games))
         self.assertEqual(40, games[0].black_score)
+        self.assertEqual(35, games[0].theoretical_black_score)
+        self.assertEqual(24, games[0].theoretical_empties)
         self.assertEqual((wthor_move_code_to_square(56),), games[0].moves)
         self.assertEqual("wthor:test.zip:WTH_2099.WTB:0", games[0].split_key)
+
+    def test_full_wthor_registry_has_official_total(self) -> None:
+        registry = load_wthor_registry()
+        self.assertEqual(137548, registry["expected_total_games"])
+        self.assertEqual(37, len(registry["archives"]))
+
+    def test_opening_key_is_invariant_under_board_symmetry(self) -> None:
+        black, white = initial_position()
+        original = Position(black | 1, white, BLACK, 1)
+        transformed = Position(
+            transform_bitboard(original.black, 1),
+            transform_bitboard(original.white, 1),
+            BLACK,
+            1,
+        )
+        self.assertEqual(
+            canonical_position_key(original),
+            canonical_position_key(transformed),
+        )
+
+    def test_corpus_aggregation_preserves_soft_and_theoretical_labels(self) -> None:
+        black, white = initial_position()
+        data = {
+            "black": np.asarray([black, black], dtype=np.uint64),
+            "white": np.asarray([white, white], dtype=np.uint64),
+            "player": np.asarray([BLACK, BLACK], dtype=np.int8),
+            "ply": np.asarray([0, 0], dtype=np.uint8),
+            "game_id": np.asarray([0, 1], dtype=np.uint32),
+            "source": np.asarray([0, 1], dtype=np.uint8),
+            "label_disc": np.asarray([12, -4], dtype=np.int8),
+            "label_filled": np.asarray([16, -8], dtype=np.int8),
+            "theoretical_disc": np.asarray([127, 6], dtype=np.int8),
+        }
+        aggregated = aggregate_observations(data)
+        self.assertEqual(1, len(aggregated["player"]))
+        self.assertEqual(2, int(aggregated["sample_count"][0]))
+        self.assertEqual(3, int(aggregated["source_mask"][0]))
+        self.assertEqual(1, int(aggregated["black_wins"][0]))
+        self.assertEqual(1, int(aggregated["white_wins"][0]))
+        self.assertAlmostEqual(4.0, float(aggregated["label_disc"][0]))
+        self.assertAlmostEqual(6.0, float(aggregated["teacher_disc"][0]))
 
     def test_patterns_stay_inside_declared_ranges(self) -> None:
         black, white = initial_position()
@@ -225,10 +277,13 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         data = {
             "label_filled": np.asarray([16, 16], dtype=np.int8),
             "label_disc": np.asarray([8, 8], dtype=np.int8),
+            "teacher_filled": np.asarray([32.0, 32.0], dtype=np.float32),
             "player": np.asarray([BLACK, WHITE], dtype=np.int8),
         }
         actual = labels(data, np.asarray([0, 1]), "filled")[:, 0]
         np.testing.assert_allclose(actual, (0.25, -0.25))
+        teacher = labels(data, np.asarray([0, 1]), "teacher-filled")[:, 0]
+        np.testing.assert_allclose(teacher, (0.5, -0.5))
 
     def test_progress_bar_reports_completion(self) -> None:
         output = io.StringIO()

@@ -1,0 +1,68 @@
+{
+  "dataset_format": 4,
+  "name": "combined-evaluation-v4",
+  "generated_on": "2026-07-22",
+  "source_games": {
+    "self_play": 20000,
+    "wthor_official_input": 137548,
+    "wthor_rejected_incomplete": 413,
+    "accepted_total": 157135
+  },
+  "corpus": {
+    "name": "othello-public-v1",
+    "sampling": {
+      "start_ply": 0,
+      "end_ply": 59,
+      "stride": 1
+    },
+    "positions": 9410810,
+    "theoretical_positions": 137099,
+    "shards": 38,
+    "metadata_bytes": 19915,
+    "metadata_sha256": "99d4accfd5ba73f7093907ecf8a7129753c31a6c6fc15fe37c8229bb888c2a16"
+  },
+  "materialization": {
+    "sampling": {
+      "start_ply": 8,
+      "end_ply": 52,
+      "stride": 1
+    },
+    "deduplication": "aggregate exact positions within split",
+    "cross_split_priority": [
+      "train",
+      "validation",
+      "test"
+    ],
+    "split_group": "D4-canonical position at ply 12"
+  },
+  "splits": {
+    "train": {
+      "positions": 3838603,
+      "observations": 5659930,
+      "theoretical_positions": 107694,
+      "phase_counts": [1326219, 1080992, 1101374, 330018],
+      "bytes": 359765414,
+      "sha256": "00b3bf961b2fc234336b52d341d992598e37039fccaface029b62a8d0921c676"
+    },
+    "validation": {
+      "positions": 562189,
+      "observations": 740014,
+      "theoretical_positions": 16249,
+      "phase_counts": [183300, 162421, 166487, 49981],
+      "bytes": 52928009,
+      "sha256": "a8eaeb6e365a66cf58e22368963294b3c7c724c23cef766b8778e5ec4a4baf9f"
+    },
+    "test": {
+      "positions": 428941,
+      "observations": 523713,
+      "theoretical_positions": 11799,
+      "phase_counts": [153720, 118811, 120345, 36065],
+      "bytes": 40210647,
+      "sha256": "f02ca7ca14a3f8aca363a2de8828700c6dfb3027d707ca8ac49bc891f43646de"
+    }
+  },
+  "metadata": {
+    "bytes": 13630,
+    "sha256": "48b87dd090bc81553650505d0401be37f73a9a5c68ade866284b9c8e4c75a921"
+  }
+}

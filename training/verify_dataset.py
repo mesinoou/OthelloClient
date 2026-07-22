@@ -87,6 +87,38 @@ def verify_arrays(
             raise ValueError(f"{name}: missing source array")
         if not np.all(np.isin(data["source"], tuple(source_ids))):
             raise ValueError(f"{name}: invalid source value")
+    v4_arrays = {
+        "source_mask",
+        "sample_count",
+        "teacher_disc",
+        "teacher_filled",
+        "theoretical_count",
+        "black_wins",
+        "draws",
+        "white_wins",
+    }
+    if v4_arrays & set(data):
+        missing_v4 = v4_arrays - set(data)
+        if missing_v4:
+            raise ValueError(f"{name}: incomplete v4 arrays: {sorted(missing_v4)}")
+        if np.any(data["sample_count"] == 0):
+            raise ValueError(f"{name}: zero sample count")
+        wld_count = data["black_wins"] + data["draws"] + data["white_wins"]
+        if not np.array_equal(wld_count, data["sample_count"]):
+            raise ValueError(f"{name}: WLD counts differ from sample count")
+        if np.any(data["theoretical_count"] > data["sample_count"]):
+            raise ValueError(f"{name}: theoretical count exceeds sample count")
+        for label in ("label_disc", "label_filled", "teacher_disc", "teacher_filled"):
+            if not np.isfinite(data[label]).all():
+                raise ValueError(f"{name}: non-finite {label}")
+            if np.any(np.abs(data[label]) > 64):
+                raise ValueError(f"{name}: {label} outside [-64, 64]")
+        source_bit = np.left_shift(
+            np.uint16(1),
+            data["source"].astype(np.uint16),
+        )
+        if np.any((data["source_mask"] & source_bit) == 0):
+            raise ValueError(f"{name}: primary source missing from source mask")
     occupied = np.fromiter(
         (int(value).bit_count() for value in data["black"] | data["white"]),
         dtype=np.uint8,
@@ -191,7 +223,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-dir",
         type=Path,
-        default=Path(".training/datasets/combined-evaluation-v3"),
+        default=Path(".training/datasets/combined-evaluation-v4"),
         help="dataset directory to verify",
     )
     parser.add_argument(
@@ -286,6 +318,19 @@ def main() -> int:
                 }
                 if report[name]["source_counts"] != expected_counts:
                     raise ValueError(f"{name}: source position counts differ")
+            if metadata.get("dataset_format", 1) >= 4:
+                observations = int(data["sample_count"].sum())
+                expected_observations = int(metadata["stats"][name]["observations"])
+                if observations != expected_observations:
+                    raise ValueError(f"{name}: observation count differs")
+                theoretical = int(np.count_nonzero(data["theoretical_count"]))
+                expected_theoretical = int(
+                    metadata["stats"][name]["theoretical_positions"]
+                )
+                if theoretical != expected_theoretical:
+                    raise ValueError(f"{name}: theoretical position count differs")
+                report[name]["observations"] = observations
+                report[name]["theoretical_positions"] = theoretical
         print(json.dumps(report, indent=2))
         print("dataset verification: PASS")
     except (OSError, ValueError, KeyError) as error:

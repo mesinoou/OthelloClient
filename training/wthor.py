@@ -21,6 +21,8 @@ class WthorGame:
     member: str
     index: int
     black_score: int
+    theoretical_black_score: int
+    theoretical_empties: int
     moves: tuple[int, ...]
 
     @property
@@ -35,6 +37,7 @@ def read_wtb(data: bytes, archive: str, member: str) -> list[WthorGame]:
     game_count = struct.unpack_from("<i", data, 4)[0]
     board_size = data[12]
     game_type = data[13]
+    theoretical_empties = data[14]
     if game_count < 0:
         raise InvalidRecordError(f"invalid WTHOR game count: {member}")
     if board_size not in (0, 8):
@@ -43,6 +46,10 @@ def read_wtb(data: bytes, archive: str, member: str) -> list[WthorGame]:
         )
     if game_type != 0:
         raise InvalidRecordError(f"WTHOR member is not a game archive: {member}")
+    if not 0 <= theoretical_empties <= 60:
+        raise InvalidRecordError(
+            f"invalid WTHOR theoretical depth {theoretical_empties}: {member}"
+        )
 
     expected_size = HEADER_BYTES + game_count * GAME_BYTES
     if len(data) != expected_size:
@@ -55,10 +62,16 @@ def read_wtb(data: bytes, archive: str, member: str) -> list[WthorGame]:
     for game_index in range(game_count):
         offset = HEADER_BYTES + game_index * GAME_BYTES
         black_score = data[offset + 6]
+        theoretical_black_score = data[offset + 7]
         if black_score > 64:
             raise InvalidRecordError(
                 f"invalid WTHOR black score {black_score}: "
                 f"{member} game {game_index}"
+            )
+        if theoretical_black_score > 64:
+            raise InvalidRecordError(
+                f"invalid WTHOR theoretical black score "
+                f"{theoretical_black_score}: {member} game {game_index}"
             )
         raw_moves = data[offset + 8 : offset + 8 + MOVE_BYTES]
         move_count = raw_moves.find(0)
@@ -79,6 +92,8 @@ def read_wtb(data: bytes, archive: str, member: str) -> list[WthorGame]:
                 member=member,
                 index=game_index,
                 black_score=black_score,
+                theoretical_black_score=theoretical_black_score,
+                theoretical_empties=theoretical_empties,
                 moves=moves,
             )
         )

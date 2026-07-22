@@ -442,7 +442,7 @@ def load_dataset(path: Path) -> dict[str, np.ndarray]:
         if missing:
             raise ValueError(
                 f"{path}: dataset format is incompatible; missing "
-                f"{sorted(missing)}. Rebuild the v3 dataset."
+                f"{sorted(missing)}. Materialize the current dataset."
             )
         return {name: archive[name] for name in archive.files}
 
@@ -468,15 +468,38 @@ def choose_indices(
     return indices
 
 
+def choose_metric_indices(
+    indices: np.ndarray,
+    maximum: int | None,
+) -> np.ndarray:
+    if maximum is None or len(indices) <= maximum:
+        return indices
+    offsets = np.linspace(0, len(indices) - 1, maximum, dtype=np.int64)
+    return indices[offsets]
+
+
 def labels(
     data: dict[str, np.ndarray],
     indices: np.ndarray,
     label_name: str,
 ) -> np.ndarray:
-    key = "label_filled" if label_name == "filled" else "label_disc"
+    key = label_array_name(label_name)
+    if key not in data:
+        raise ValueError(
+            f"dataset does not contain {key}; materialize a v4 dataset"
+        )
     result = data[key][indices].astype(np.float32)
     result *= data["player"][indices].astype(np.float32)
     return result[:, None] / 64.0
+
+
+def label_array_name(label_name: str) -> str:
+    return {
+        "filled": "label_filled",
+        "disc": "label_disc",
+        "teacher-filled": "teacher_filled",
+        "teacher-disc": "teacher_disc",
+    }[label_name]
 
 
 def evaluate(
@@ -528,6 +551,10 @@ def train_phase_numpy(
     best_snapshot = model.snapshot()
     best_loss = float("inf")
     stale_epochs = 0
+    train_metric_indices = choose_metric_indices(
+        train_indices,
+        args.train_metrics_samples,
+    )
 
     for epoch in range(1, args.epochs + 1):
         shuffled = train_indices.copy()
@@ -553,7 +580,7 @@ def train_phase_numpy(
         train_metrics = evaluate(
             model,
             train,
-            train_indices,
+            train_metric_indices,
             args.label,
             args.batch_size,
             f"phase {phase} epoch {epoch} train metrics",
@@ -718,16 +745,51 @@ def torch_batch(
     indices: np.ndarray,
     device: Any,
 ) -> dict[str, Any]:
-    fields = REQUIRED_ARRAYS - {"ply", "label_disc", "label_filled"}
-    fields |= {"label_disc", "label_filled"}
+    fields = torch_data_fields(data)
     return {
         name: torch.as_tensor(data[name][indices], device=device)
         for name in fields
     }
 
 
+def torch_data_fields(data: dict[str, Any]) -> set[str]:
+    fields = REQUIRED_ARRAYS - {"ply", "label_disc", "label_filled"}
+    fields |= {"label_disc", "label_filled"}
+    fields |= {
+        name
+        for name in ("teacher_disc", "teacher_filled")
+        if name in data
+    }
+    return fields
+
+
+def torch_cached_dataset(
+    data: dict[str, np.ndarray],
+    indices: np.ndarray,
+    device: Any,
+) -> dict[str, Any]:
+    cached = {}
+    for name in torch_data_fields(data):
+        values = data[name][indices]
+        if np.issubdtype(values.dtype, np.unsignedinteger):
+            values = values.astype(np.int32)
+        cached[name] = torch.as_tensor(values, device=device)
+    return cached
+
+
+def torch_select(
+    data: dict[str, Any],
+    indices: Any,
+) -> dict[str, Any]:
+    return {name: values[indices] for name, values in data.items()}
+
+
 def torch_labels(batch: dict[str, Any], label_name: str) -> Any:
-    key = "label_filled" if label_name == "filled" else "label_disc"
+    key = label_array_name(label_name)
+    if key not in batch:
+        raise ValueError(
+            f"dataset does not contain {key}; materialize a v4 dataset"
+        )
     return (
         batch[key].float() * batch["player"].float()
     )[:, None] / 64.0
@@ -764,6 +826,36 @@ def evaluate_torch(
     return Metrics(squared_error / count, absolute_error / count)
 
 
+def evaluate_torch_cached(
+    model: Any,
+    data: dict[str, Any],
+    label_name: str,
+    batch_size: int,
+    progress_label: str,
+    progress_enabled: bool,
+) -> Metrics:
+    model.eval()
+    squared_error = 0.0
+    absolute_error = 0.0
+    count = len(data["player"])
+    batches = max(math.ceil(count / batch_size), 1)
+    progress = ProgressBar(progress_label, batches, progress_enabled)
+    with torch.no_grad():
+        for batch_number, start in enumerate(
+            range(0, count, batch_size),
+            start=1,
+        ):
+            batch = {
+                name: values[start : start + batch_size]
+                for name, values in data.items()
+            }
+            difference = model(batch) - torch_labels(batch, label_name)
+            squared_error += float(torch.square(difference).sum().item())
+            absolute_error += float(torch.abs(difference).sum().item())
+            progress.update(batch_number)
+    return Metrics(squared_error / count, absolute_error / count)
+
+
 def train_phase_torch(
     phase: int,
     train: dict[str, np.ndarray],
@@ -778,6 +870,21 @@ def train_phase_torch(
         raise ValueError(f"phase {phase} has no train or validation samples")
     template = PatternModel(rng)
     model = TorchPatternModel(template).to(device)
+    train_cache = torch_cached_dataset(train, train_indices, device)
+    validation_cache = torch_cached_dataset(
+        validation,
+        validation_indices,
+        device,
+    )
+    train_offsets = np.arange(len(train_indices), dtype=np.int64)
+    train_metric_offsets = choose_metric_indices(
+        train_offsets,
+        args.train_metrics_samples,
+    )
+    train_metrics_cache = torch_select(
+        train_cache,
+        torch.as_tensor(train_metric_offsets, device=device),
+    )
     weight_parameters = [
         value for name, value in model.values.items() if "_w" in name
     ]
@@ -792,7 +899,10 @@ def train_phase_torch(
         lr=args.learning_rate,
     )
     use_amp = args.amp and device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    try:
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    except (AttributeError, TypeError):
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
     history = []
     best_state = {
         name: value.detach().cpu().clone()
@@ -802,7 +912,7 @@ def train_phase_torch(
     stale_epochs = 0
 
     for epoch in range(1, args.epochs + 1):
-        shuffled = train_indices.copy()
+        shuffled = train_offsets.copy()
         rng.shuffle(shuffled)
         batches = math.ceil(len(shuffled) / args.batch_size)
         progress = ProgressBar(
@@ -815,10 +925,16 @@ def train_phase_torch(
             range(0, len(shuffled), args.batch_size),
             start=1,
         ):
-            selected = shuffled[start : start + args.batch_size]
-            batch = torch_batch(train, selected, device)
+            selected = torch.as_tensor(
+                shuffled[start : start + args.batch_size],
+                device=device,
+            )
+            batch = torch_select(train_cache, selected)
             optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.autocast(
+                device_type=device.type,
+                enabled=use_amp,
+            ):
                 difference = model(batch) - torch_labels(batch, args.label)
                 loss = torch.square(difference).mean()
             scaler.scale(loss).backward()
@@ -826,23 +942,19 @@ def train_phase_torch(
             scaler.update()
             progress.update(batch_number)
 
-        train_metrics = evaluate_torch(
+        train_metrics = evaluate_torch_cached(
             model,
-            train,
-            train_indices,
+            train_metrics_cache,
             args.label,
             args.batch_size,
-            device,
             f"phase {phase} epoch {epoch} train metrics",
             not args.no_progress,
         )
-        validation_metrics = evaluate_torch(
+        validation_metrics = evaluate_torch_cached(
             model,
-            validation,
-            validation_indices,
+            validation_cache,
             args.label,
             args.batch_size,
-            device,
             f"phase {phase} epoch {epoch} validation",
             not args.no_progress,
         )
@@ -1049,13 +1161,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-dir",
         type=Path,
-        default=Path(".training/datasets/combined-evaluation-v3"),
+        default=Path(".training/datasets/combined-evaluation-v4"),
         help="input dataset directory",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(".training/models/pattern-evaluation-v2"),
+        default=Path(".training/models/pattern-evaluation-v4"),
         help="model and lookup-table output directory",
     )
     parser.add_argument("--epochs", type=int, default=20, help="maximum epochs")
@@ -1091,9 +1203,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--label",
-        choices=("filled", "disc"),
+        choices=("filled", "disc", "teacher-filled", "teacher-disc"),
         default="filled",
-        help="terminal score used as the training target",
+        help="empirical or WTHOR-theoretical terminal score target",
     )
     parser.add_argument(
         "--phase-starts",
@@ -1111,6 +1223,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="limit each split and phase; marks output as smoke-only",
+    )
+    parser.add_argument(
+        "--train-metrics-samples",
+        type=int,
+        default=None,
+        help="limit end-of-epoch training metrics without limiting training",
     )
     parser.add_argument(
         "--device",
@@ -1147,6 +1265,8 @@ def validate_args(args: argparse.Namespace) -> tuple[int, ...]:
         raise ValueError("score-scale must be positive")
     if args.max_samples_per_phase is not None and args.max_samples_per_phase < 1:
         raise ValueError("max-samples-per-phase must be positive")
+    if args.train_metrics_samples is not None and args.train_metrics_samples < 1:
+        raise ValueError("train-metrics-samples must be positive")
     if args.device != "auto" and args.device != "cpu" and not args.device.startswith(
         "cuda"
     ):
@@ -1353,6 +1473,7 @@ def main() -> int:
                 "learning_rate": args.learning_rate,
                 "l2": args.l2,
                 "max_samples_per_phase": args.max_samples_per_phase,
+                "train_metrics_samples": args.train_metrics_samples,
                 "backend": backend_details,
                 "amp": bool(args.amp and backend == "torch"),
                 "selections": selections,
