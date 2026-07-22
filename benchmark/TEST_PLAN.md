@@ -23,7 +23,7 @@ javac --release 11 -encoding UTF-8 -Xlint:all -d .build *.java
 
 ### L1: Required regression
 
-すべての変更で次の9テストを実行する。
+すべての変更で次の10テストを実行する。
 
 ```powershell
 $tests = @(
@@ -35,12 +35,13 @@ $tests = @(
   "EndgameRegionAnalyzerTest",
   "SearchEngineTest",
   "OthelloClientProtocolTest",
-  "EdaxGtpEngineTest"
+  "EdaxGtpEngineTest",
+  "RuntimeConfigurationTest"
 )
 foreach ($test in $tests) { java -cp .build $test }
 ```
 
-合格条件は9件すべてPASSである。失敗した実験は性能値にかかわらず停止する。
+合格条件は10件すべてPASSである。失敗した実験は性能値にかかわらず停止する。
 
 ### L2: Search correctness and determinism
 
