@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
 public final class OthelloClient {
 
@@ -23,6 +25,11 @@ public final class OthelloClient {
     private final ExecutorService searchController;
     private final OthelloAI ai;
     private final SearchLimits searchLimits;
+    private final boolean ponderEnabled;
+    private final double ponderRatio;
+    private final long ponderTimeMillis;
+    private final SearchLimits ponderLimits;
+    private final PonderMetrics ponderMetrics = new PonderMetrics();
 
     private Socket socket;
     private BufferedReader reader;
@@ -36,10 +43,25 @@ public final class OthelloClient {
     private int actedBoardRevision = -1;
     private long searchGeneration;
     private boolean hasBoard;
+    private boolean boardFresh;
     private boolean boardRequested;
     private boolean searchAfterBoard;
     private Future<?> activeSearch;
+    private SearchRole activeRole = SearchRole.NONE;
+    private long activeGeneration = -1L;
+    private int ponderedBoardRevision = -1;
+    private int ponderPredictionRevision = -1;
+    private int ponderPredictionSquare = -1;
+    private long ponderStopGeneration = -1L;
+    private long ponderStopRequestedNanos;
+    private boolean closed;
     private volatile boolean running = true;
+
+    private enum SearchRole {
+        NONE,
+        AUTHORITATIVE,
+        PONDER
+    }
 
     public OthelloClient(
         String host,
@@ -74,7 +96,9 @@ public final class OthelloClient {
             timeMillis,
             evaluationModel == null
                 ? new OthelloAI()
-                : new OthelloAI(evaluationModel)
+                : new OthelloAI(evaluationModel),
+            false,
+            ClientOptions.DEFAULT_PONDER_RATIO
         );
     }
 
@@ -86,8 +110,35 @@ public final class OthelloClient {
         long timeMillis,
         OthelloAI ai
     ) {
+        this(
+            host,
+            port,
+            nickname,
+            searchThreads,
+            timeMillis,
+            ai,
+            false,
+            ClientOptions.DEFAULT_PONDER_RATIO
+        );
+    }
+
+    OthelloClient(
+        String host,
+        int port,
+        String nickname,
+        int searchThreads,
+        long timeMillis,
+        OthelloAI ai,
+        boolean ponderEnabled,
+        double ponderRatio
+    ) {
         if (ai == null) {
             throw new NullPointerException("ai");
+        }
+        if (!(ponderRatio > 0.0) || ponderRatio > 1.0) {
+            throw new IllegalArgumentException(
+                "ponderRatio must be greater than zero and at most one"
+            );
         }
         this.host = host;
         this.port = port;
@@ -95,7 +146,15 @@ public final class OthelloClient {
         this.searchThreads = searchThreads;
         this.timeMillis = timeMillis;
         this.ai = ai;
+        this.ponderEnabled = ponderEnabled;
+        this.ponderRatio = ponderRatio;
         this.searchLimits = new SearchLimits(timeMillis, 64, searchThreads);
+        this.ponderTimeMillis = (long) Math.floor(
+            Math.min(8000.0, timeMillis * ponderRatio)
+        );
+        this.ponderLimits = ponderTimeMillis < 1L
+            ? null
+            : new SearchLimits(ponderTimeMillis, 64, searchThreads);
         this.searchController = Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "othello-search-control");
             thread.setDaemon(true);
@@ -115,6 +174,13 @@ public final class OthelloClient {
                     + ", endgameThreshold="
                     + SearchEngine.endgameThresholdFor(timeMillis)
                     + " (ルート並列探索)"
+            );
+            System.out.println(
+                "相手手番探索: "
+                    + (ponderEnabled
+                        ? "on, ratio=" + ponderRatio
+                            + ", budgetMillis=" + ponderTimeMillis
+                        : "off")
             );
             System.out.println("評価関数: " + ai.evaluatorDescription());
             if (ai.openingBookSize() > 0) {
@@ -205,10 +271,14 @@ public final class OthelloClient {
             myColor = color;
             currentTurn = 0;
             hasBoard = false;
+            boardFresh = false;
             boardRequested = false;
             searchAfterBoard = false;
             boardRevision++;
             actedBoardRevision = -1;
+            ponderedBoardRevision = -1;
+            ponderPredictionRevision = -1;
+            ponderPredictionSquare = -1;
         }
 
         System.out.println(
@@ -250,16 +320,27 @@ public final class OthelloClient {
             return;
         }
 
-        stopSearch();
         BitBoardPosition receivedPosition = new BitBoardPosition(black, white);
+        boolean changed;
+        synchronized (stateLock) {
+            changed = !hasBoard || !position.equals(receivedPosition);
+        }
+        if (changed) {
+            stopSearch();
+        }
+
         boolean resumeSearch;
         synchronized (stateLock) {
-            boolean changed = !hasBoard || !position.equals(receivedPosition);
             boolean boardWasRequestedForTurn =
-                searchAfterBoard && currentTurn == myColor;
+                searchAfterBoard && currentTurn != 0;
+
+            if (changed) {
+                recordPonderPrediction(receivedPosition);
+            }
 
             position = receivedPosition;
             hasBoard = true;
+            boardFresh = true;
             boardRequested = false;
             searchAfterBoard = false;
             if (changed) {
@@ -274,12 +355,12 @@ public final class OthelloClient {
                 currentTurn = 0;
             }
             resumeSearch = boardWasRequestedForTurn
-                || (!changed && currentTurn == myColor);
+                || (!changed && currentTurn != 0);
         }
 
         printBoard();
         if (resumeSearch) {
-            startSearchIfReady();
+            startSearchForCurrentTurn();
         }
     }
 
@@ -294,7 +375,7 @@ public final class OthelloClient {
         synchronized (stateLock) {
             currentTurn = color;
             searchAfterBoard = false;
-            if (currentTurn == myColor && !hasBoard) {
+            if (!hasBoard || !boardFresh) {
                 searchAfterBoard = true;
                 if (!boardRequested) {
                     boardRequested = true;
@@ -305,10 +386,12 @@ public final class OthelloClient {
 
         System.out.println("現在の手番: " + colorName(color));
         if (requestBoard) {
-            System.out.println("盤面が未受信のためBOARDを要求します。");
+            System.out.println(
+                "盤面が未受信または更新待ちのためBOARDを要求します。"
+            );
             send("BOARD");
         } else {
-            startSearchIfReady();
+            startSearchForCurrentTurn();
         }
     }
 
@@ -332,12 +415,26 @@ public final class OthelloClient {
         }
     }
 
-    private void startSearchIfReady() {
+    private void startSearchForCurrentTurn() {
+        int turn;
+        synchronized (stateLock) {
+            turn = currentTurn;
+        }
+        if (turn == myColor) {
+            startAuthoritativeSearchIfReady();
+        } else if (turn == -myColor) {
+            startPonderIfReady();
+        }
+    }
+
+    private void startAuthoritativeSearchIfReady() {
         synchronized (stateLock) {
             if (!running
                 || myColor == 0
                 || currentTurn != myColor
                 || !hasBoard
+                || !boardFresh
+                || activeSearch != null
                 || actedBoardRevision == boardRevision) {
                 return;
             }
@@ -347,9 +444,118 @@ public final class OthelloClient {
             final long generation = searchGeneration;
             final BitBoardPosition snapshot = position;
 
-            activeSearch = searchController.submit(
-                () -> chooseAndSendMove(snapshot, color, revision, generation)
+            scheduleSearch(
+                SearchRole.AUTHORITATIVE,
+                generation,
+                () -> runAuthoritativeSearch(
+                    snapshot,
+                    color,
+                    revision,
+                    generation
+                )
             );
+        }
+    }
+
+    private void startPonderIfReady() {
+        synchronized (stateLock) {
+            if (!ponderEnabled
+                || ponderLimits == null
+                || !running
+                || myColor == 0
+                || currentTurn != -myColor
+                || !hasBoard
+                || !boardFresh
+                || ponderedBoardRevision == boardRevision
+                || activeSearch != null) {
+                return;
+            }
+
+            final int color = currentTurn;
+            final int revision = boardRevision;
+            final long generation = searchGeneration;
+            final BitBoardPosition snapshot = position;
+            ponderedBoardRevision = revision;
+            ponderPredictionRevision = -1;
+            ponderPredictionSquare = -1;
+
+            scheduleSearch(
+                SearchRole.PONDER,
+                generation,
+                () -> runPonderSearch(
+                    snapshot,
+                    color,
+                    revision,
+                    generation
+                )
+            );
+        }
+    }
+
+    private void scheduleSearch(
+        SearchRole role,
+        long generation,
+        Runnable action
+    ) {
+        FutureTask<Void> task = new FutureTask<>(() -> {
+            action.run();
+            return null;
+        });
+        activeRole = role;
+        activeGeneration = generation;
+        activeSearch = task;
+        searchController.execute(task);
+    }
+
+    private void runAuthoritativeSearch(
+        BitBoardPosition snapshot,
+        int color,
+        int revision,
+        long generation
+    ) {
+        try {
+            ponderMetrics.recordOwnSearch(
+                ai.hasTransposition(snapshot, color)
+            );
+            chooseAndSendMove(snapshot, color, revision, generation);
+        } finally {
+            finishSearch(generation);
+        }
+    }
+
+    private void runPonderSearch(
+        BitBoardPosition snapshot,
+        int color,
+        int revision,
+        long generation
+    ) {
+        ponderMetrics.recordStart();
+        SearchResult result = null;
+        try {
+            result = ai.ponder(snapshot, color, ponderLimits);
+            if (!Thread.currentThread().isInterrupted()
+                && !result.stopped()
+                && result.bestSquare() >= 0) {
+                synchronized (stateLock) {
+                    if (running
+                        && generation == searchGeneration
+                        && revision == boardRevision
+                        && currentTurn == color
+                        && color == -myColor
+                        && boardFresh) {
+                        ponderPredictionRevision = revision;
+                        ponderPredictionSquare = result.bestSquare();
+                    }
+                }
+            }
+        } finally {
+            long stopRequestedNanos = consumePonderStop(generation);
+            if (result != null) {
+                ponderMetrics.recordResult(result, stopRequestedNanos);
+            } else {
+                ponderMetrics.recordFailure(stopRequestedNanos);
+            }
+            finishSearch(generation);
         }
     }
 
@@ -420,6 +626,7 @@ public final class OthelloClient {
             int chosenX = CoordinateConverter.squareToX(square);
             int chosenY = CoordinateConverter.squareToY(square);
             actedBoardRevision = boardRevision;
+            boardFresh = false;
             System.out.println("AIの着手: PUT " + chosenX + " " + chosenY);
             send("PUT " + chosenX + " " + chosenY);
         }
@@ -429,33 +636,108 @@ public final class OthelloClient {
         ai.stop();
         Future<?> search;
         synchronized (stateLock) {
+            if (activeRole == SearchRole.PONDER && activeSearch != null) {
+                ponderStopGeneration = activeGeneration;
+                ponderStopRequestedNanos = System.nanoTime();
+            }
             searchGeneration++;
             search = activeSearch;
             activeSearch = null;
+            activeRole = SearchRole.NONE;
+            activeGeneration = -1L;
         }
         if (search != null) {
             search.cancel(true);
         }
     }
 
-    private void printBoard() {
+    private void finishSearch(long generation) {
         synchronized (stateLock) {
-            System.out.println();
-            System.out.println("    0 1 2 3 4 5 6 7");
-            System.out.println("   -----------------");
+            if (activeGeneration == generation) {
+                activeSearch = null;
+                activeRole = SearchRole.NONE;
+                activeGeneration = -1L;
+            }
+        }
+    }
+
+    private long consumePonderStop(long generation) {
+        synchronized (stateLock) {
+            if (ponderStopGeneration != generation) {
+                return 0L;
+            }
+            long requestedNanos = ponderStopRequestedNanos;
+            ponderStopGeneration = -1L;
+            ponderStopRequestedNanos = 0L;
+            return requestedNanos;
+        }
+    }
+
+    private void recordPonderPrediction(
+        BitBoardPosition receivedPosition
+    ) {
+        if (ponderPredictionRevision != boardRevision
+            || ponderPredictionSquare < 0
+            || myColor == 0) {
+            ponderPredictionRevision = -1;
+            ponderPredictionSquare = -1;
+            return;
+        }
+
+        BitBoardPosition predicted = applyMove(
+            position,
+            -myColor,
+            ponderPredictionSquare
+        );
+        ponderMetrics.recordPrediction(
+            predicted != null && predicted.equals(receivedPosition)
+        );
+        ponderPredictionRevision = -1;
+        ponderPredictionSquare = -1;
+    }
+
+    private static BitBoardPosition applyMove(
+        BitBoardPosition source,
+        int color,
+        int square
+    ) {
+        long move = 1L << square;
+        long player = source.player(color);
+        long opponent = source.opponent(color);
+        long flips = BitBoard.flips(player, opponent, move);
+        if (flips == 0L) {
+            return null;
+        }
+        long movedPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+        long movedOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+        return color == 1
+            ? new BitBoardPosition(movedPlayer, movedOpponent)
+            : new BitBoardPosition(movedOpponent, movedPlayer);
+    }
+
+    private void printBoard() {
+        String rendered;
+        synchronized (stateLock) {
+            StringBuilder board = new StringBuilder();
+            board.append(System.lineSeparator());
+            board.append("    0 1 2 3 4 5 6 7");
+            board.append(System.lineSeparator());
+            board.append("   -----------------");
+            board.append(System.lineSeparator());
             for (int y = 0; y < BOARD_SIZE; y++) {
-                System.out.print(y + " | ");
+                board.append(y).append(" | ");
                 for (int x = 0; x < BOARD_SIZE; x++) {
                     long bit = 1L << CoordinateConverter.xyToSquare(x, y);
                     char mark = (position.black() & bit) != 0L
                         ? 'B'
                         : (position.white() & bit) != 0L ? 'W' : '.';
-                    System.out.print(mark + " ");
+                    board.append(mark).append(' ');
                 }
-                System.out.println();
+                board.append(System.lineSeparator());
             }
-            System.out.println();
+            rendered = board.append(System.lineSeparator()).toString();
         }
+        System.out.print(rendered);
     }
 
     private void processError(String message) {
@@ -556,10 +838,27 @@ public final class OthelloClient {
     }
 
     private void close() {
-        running = false;
+        synchronized (stateLock) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            running = false;
+        }
         stopSearch();
-        ai.shutdown();
         searchController.shutdownNow();
+        try {
+            searchController.awaitTermination(2L, TimeUnit.SECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+        }
+        ai.shutdown();
+
+        if (ponderEnabled) {
+            System.out.println(
+                "相手手番探索集計: " + ponderMetrics.snapshot()
+            );
+        }
 
         if (socket != null && !socket.isClosed()) {
             try {
@@ -568,6 +867,10 @@ public final class OthelloClient {
                 System.err.println("ソケットを閉じる際にエラーが発生しました。");
             }
         }
+    }
+
+    PonderMetrics.Snapshot ponderMetricsSnapshot() {
+        return ponderMetrics.snapshot();
     }
 
     private static String colorName(int color) {
@@ -600,7 +903,9 @@ public final class OthelloClient {
                 options.nickname,
                 runtime.threads(),
                 options.timeMillis,
-                ai
+                ai,
+                options.ponderEnabled,
+                options.ponderRatio
             ).start();
         } catch (IllegalArgumentException error) {
             System.err.println(error.getMessage());

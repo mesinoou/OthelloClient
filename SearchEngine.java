@@ -208,6 +208,20 @@ public final class SearchEngine {
         cancelActiveTasks();
     }
 
+    boolean hasTransposition(BitBoardPosition position, int color) {
+        if (position == null) {
+            throw new NullPointerException("position");
+        }
+        if (table == null) {
+            return false;
+        }
+        long probe = table.probe(
+            position.player(color),
+            position.opponent(color)
+        );
+        return TranspositionTable.probeFound(probe);
+    }
+
     public void shutdown() {
         stop();
         synchronized (poolLock) {

@@ -20,18 +20,30 @@ public final class RuntimeConfigurationTest {
         if (defaults.ttSpec != null) {
             throw new AssertionError("default TT must defer to property/auto");
         }
+        assertFalse(defaults.ponderEnabled, "default ponder");
+        assertDoubleEquals(0.80, defaults.ponderRatio, "default ratio");
 
         ClientOptions explicit = ClientOptions.parse(new String[] {
             "localhost", "25033", "Test", "4", "8000", "model.bin",
-            "--tt", "524288"
+            "--tt", "524288", "--ponder=on", "--ponder-ratio", "0.65"
         });
         assertEquals("4", explicit.threadSpec, "explicit threads");
         assertEquals("524288", explicit.ttSpec, "explicit TT");
         assertEquals(25033, explicit.port, "port");
+        assertTrue(explicit.ponderEnabled, "explicit ponder");
+        assertDoubleEquals(0.65, explicit.ponderRatio, "explicit ratio");
 
         expectFailure(() -> ClientOptions.parse(new String[] {
             "localhost", "25033", "Test", "4", "8000", "model.bin",
             "--unknown"
+        }));
+        expectFailure(() -> ClientOptions.parse(new String[] {
+            "localhost", "25033", "Test", "4", "8000", "model.bin",
+            "--ponder", "maybe"
+        }));
+        expectFailure(() -> ClientOptions.parse(new String[] {
+            "localhost", "25033", "Test", "4", "8000", "model.bin",
+            "--ponder-ratio", "1.01"
         }));
     }
 
@@ -129,6 +141,30 @@ public final class RuntimeConfigurationTest {
         if (expected != actual) {
             throw new AssertionError(
                 label + " expected=" + expected + " actual=" + actual
+            );
+        }
+    }
+
+    private static void assertTrue(boolean value, String label) {
+        if (!value) {
+            throw new AssertionError(label + ": expected true");
+        }
+    }
+
+    private static void assertFalse(boolean value, String label) {
+        if (value) {
+            throw new AssertionError(label + ": expected false");
+        }
+    }
+
+    private static void assertDoubleEquals(
+        double expected,
+        double actual,
+        String label
+    ) {
+        if (Double.compare(expected, actual) != 0) {
+            throw new AssertionError(
+                label + ": expected=" + expected + ", actual=" + actual
             );
         }
     }
