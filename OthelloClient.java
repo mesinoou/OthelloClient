@@ -548,14 +548,6 @@ public final class OthelloClient {
                     }
                 }
             }
-            System.out.println(
-                "相手手番探索: depth=" + result.completedDepth()
-                    + ", nodes=" + result.nodes()
-                    + ", timeMillis=" + result.elapsedNanos() / 1_000_000L
-                    + ", ttHits=" + result.transpositionHits()
-                    + (result.timedOut() ? ", timeout" : "")
-                    + (result.stopped() ? ", stopped" : "")
-            );
         } finally {
             long stopRequestedNanos = consumePonderStop(generation);
             if (result != null) {
@@ -724,23 +716,28 @@ public final class OthelloClient {
     }
 
     private void printBoard() {
+        String rendered;
         synchronized (stateLock) {
-            System.out.println();
-            System.out.println("    0 1 2 3 4 5 6 7");
-            System.out.println("   -----------------");
+            StringBuilder board = new StringBuilder();
+            board.append(System.lineSeparator());
+            board.append("    0 1 2 3 4 5 6 7");
+            board.append(System.lineSeparator());
+            board.append("   -----------------");
+            board.append(System.lineSeparator());
             for (int y = 0; y < BOARD_SIZE; y++) {
-                System.out.print(y + " | ");
+                board.append(y).append(" | ");
                 for (int x = 0; x < BOARD_SIZE; x++) {
                     long bit = 1L << CoordinateConverter.xyToSquare(x, y);
                     char mark = (position.black() & bit) != 0L
                         ? 'B'
                         : (position.white() & bit) != 0L ? 'W' : '.';
-                    System.out.print(mark + " ");
+                    board.append(mark).append(' ');
                 }
-                System.out.println();
+                board.append(System.lineSeparator());
             }
-            System.out.println();
+            rendered = board.append(System.lineSeparator()).toString();
         }
+        System.out.print(rendered);
     }
 
     private void processError(String message) {

@@ -11,6 +11,7 @@ final class PonderMetrics {
     private long totalNanos;
     private long totalNodes;
     private long totalDepth;
+    private long totalTtHits;
     private long predictions;
     private long predictionMatches;
     private long ownSearches;
@@ -29,6 +30,7 @@ final class PonderMetrics {
         totalNanos += result.elapsedNanos();
         totalNodes += result.nodes();
         totalDepth += result.completedDepth();
+        totalTtHits += result.transpositionHits();
         if (result.stopped() || Thread.currentThread().isInterrupted()) {
             interruptions++;
         } else {
@@ -76,6 +78,7 @@ final class PonderMetrics {
             totalNanos,
             totalNodes,
             totalDepth,
+            totalTtHits,
             predictions,
             predictionMatches,
             ownSearches,
@@ -102,6 +105,7 @@ final class PonderMetrics {
         private final long totalNanos;
         private final long totalNodes;
         private final long totalDepth;
+        private final long totalTtHits;
         private final long predictions;
         private final long predictionMatches;
         private final long ownSearches;
@@ -116,6 +120,7 @@ final class PonderMetrics {
             long totalNanos,
             long totalNodes,
             long totalDepth,
+            long totalTtHits,
             long predictions,
             long predictionMatches,
             long ownSearches,
@@ -129,6 +134,7 @@ final class PonderMetrics {
             this.totalNanos = totalNanos;
             this.totalNodes = totalNodes;
             this.totalDepth = totalDepth;
+            this.totalTtHits = totalTtHits;
             this.predictions = predictions;
             this.predictionMatches = predictionMatches;
             this.ownSearches = ownSearches;
@@ -187,7 +193,7 @@ final class PonderMetrics {
             return String.format(
                 Locale.ROOT,
                 "starts=%d, completed=%d, interrupted=%d, "
-                    + "avgMillis=%.3f, nodes=%d, avgDepth=%.2f, "
+                    + "avgMillis=%.3f, nodes=%d, avgDepth=%.2f, ttHits=%d, "
                     + "prediction=%d/%d (%.1f%%), ownInitialTtHit=%d/%d, "
                     + "stopP95Millis=%.3f, erroneousPuts=%d",
                 starts,
@@ -196,6 +202,7 @@ final class PonderMetrics {
                 averageMillis,
                 totalNodes,
                 averageDepth,
+                totalTtHits,
                 predictionMatches,
                 predictions,
                 predictionRate,
