@@ -39,6 +39,9 @@ public final class EvaluationMatchRunner {
 
     private static void run(Settings settings) throws IOException {
         PositionEvaluator learned = LearnedEvaluator.load(settings.modelPath);
+        PositionEvaluator modelOpponent = settings.opponent == Opponent.MODEL
+            ? LearnedEvaluator.load(settings.opponentModelPath)
+            : null;
         List<Opening> openings = generateOpenings(
             settings.pairs,
             settings.openingPlies,
@@ -52,7 +55,9 @@ public final class EvaluationMatchRunner {
             "opponent=" + settings.opponent
                 + (settings.opponent == Opponent.EDAX
                     ? ", edaxLevel=" + settings.edaxLevel
-                    : "")
+                    : settings.opponent == Opponent.MODEL
+                        ? ", model=" + modelOpponent.description()
+                        : "")
         );
         System.out.println(
             "pairs=" + settings.pairs
@@ -78,6 +83,7 @@ public final class EvaluationMatchRunner {
                 GameRun run = playOneGame(
                     settings,
                     learned,
+                    modelOpponent,
                     opening,
                     learnedColor
                 );
@@ -108,6 +114,7 @@ public final class EvaluationMatchRunner {
     private static GameRun playOneGame(
         Settings settings,
         PositionEvaluator learnedEvaluator,
+        PositionEvaluator modelOpponent,
         Opening opening,
         int learnedColor
     ) throws IOException {
@@ -120,6 +127,7 @@ public final class EvaluationMatchRunner {
         MatchPlayer opponent = createOpponent(
             settings,
             -learnedColor,
+            modelOpponent,
             opening
         );
         MatchPlayer black = learnedColor == 1 ? learned : opponent;
@@ -183,6 +191,7 @@ public final class EvaluationMatchRunner {
     private static MatchPlayer createOpponent(
         Settings settings,
         int assignedColor,
+        PositionEvaluator modelOpponent,
         Opening opening
     ) throws IOException {
         if (settings.opponent == Opponent.HANDCRAFTED) {
@@ -190,6 +199,14 @@ public final class EvaluationMatchRunner {
                 "handcrafted",
                 assignedColor,
                 new Evaluator(),
+                settings
+            );
+        }
+        if (settings.opponent == Opponent.MODEL) {
+            return new SearchMatchPlayer(
+                "opponentModel",
+                assignedColor,
+                modelOpponent,
                 settings
             );
         }
@@ -277,6 +294,7 @@ public final class EvaluationMatchRunner {
 
     private enum Opponent {
         HANDCRAFTED,
+        MODEL,
         EDAX
     }
 
@@ -309,10 +327,20 @@ public final class EvaluationMatchRunner {
         ) {
             this.name = name;
             this.assignedColor = assignedColor;
-            engine = new SearchEngine(
-                evaluator,
-                new TranspositionTable(TABLE_CAPACITY)
-            );
+            TranspositionTable table = new TranspositionTable(TABLE_CAPACITY);
+            engine = settings.opponent == Opponent.MODEL
+                ? new SearchEngine(
+                    evaluator,
+                    table,
+                    true,
+                    0,
+                    true,
+                    true,
+                    true,
+                    false,
+                    true
+                )
+                : new SearchEngine(evaluator, table);
             limits = new SearchLimits(
                 settings.timeMillis,
                 settings.maxDepth,
@@ -565,7 +593,7 @@ public final class EvaluationMatchRunner {
         private MatchStatistics(Settings settings) {
             this.settings = settings;
             opponent = new PlayerMetrics(
-                settings.opponent == Opponent.HANDCRAFTED
+                settings.opponent != Opponent.EDAX
             );
         }
 
@@ -607,13 +635,16 @@ public final class EvaluationMatchRunner {
             opponent.print(
                 settings.opponent == Opponent.HANDCRAFTED
                     ? "handcrafted"
-                    : "edax"
+                    : settings.opponent == Opponent.MODEL
+                        ? "opponentModel"
+                        : "edax"
             );
         }
     }
 
     private static final class Settings {
         private final Path modelPath;
+        private final Path opponentModelPath;
         private final Opponent opponent;
         private final int pairs;
         private final int openingPlies;
@@ -626,6 +657,7 @@ public final class EvaluationMatchRunner {
 
         private Settings(
             Path modelPath,
+            Path opponentModelPath,
             Opponent opponent,
             int pairs,
             int openingPlies,
@@ -637,6 +669,7 @@ public final class EvaluationMatchRunner {
             long ponderMillis
         ) {
             this.modelPath = modelPath;
+            this.opponentModelPath = opponentModelPath;
             this.opponent = opponent;
             this.pairs = pairs;
             this.openingPlies = openingPlies;
@@ -652,20 +685,26 @@ public final class EvaluationMatchRunner {
             if (args.length < 2 || args.length > 10) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
-                        + "<handcrafted|edax> [pairs] [openingPlies] "
+                        + "<handcrafted|edax|model=path> [pairs] "
+                        + "[openingPlies] "
                         + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
                         + "[openingSeed] [ponderMillis]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
             Opponent opponent;
+            Path opponentModelPath = null;
             if ("handcrafted".equalsIgnoreCase(args[1])) {
                 opponent = Opponent.HANDCRAFTED;
             } else if ("edax".equalsIgnoreCase(args[1])) {
                 opponent = Opponent.EDAX;
+            } else if (args[1].regionMatches(true, 0, "model=", 0, 6)
+                && args[1].length() > 6) {
+                opponent = Opponent.MODEL;
+                opponentModelPath = Paths.get(args[1].substring(6));
             } else {
                 throw new IllegalArgumentException(
-                    "opponent must be handcrafted or edax"
+                    "opponent must be handcrafted, edax, or model=path"
                 );
             }
             int pairs = integerArg(args, 2, 10);
@@ -705,6 +744,7 @@ public final class EvaluationMatchRunner {
             }
             return new Settings(
                 modelPath,
+                opponentModelPath,
                 opponent,
                 pairs,
                 openingPlies,

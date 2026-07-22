@@ -103,9 +103,15 @@ java -cp .build EvaluationMatchRunner `
 # Edax 4.6 level 6と20局
 java -cp .build EvaluationMatchRunner `
   data/evaluation-tables.bin edax 10 8 100 64 1 6
+
+# 2つのモデルをMPCなし・固定深さで直接比較
+java -cp .build EvaluationMatchRunner `
+  data/evaluation-tables.bin `
+  model=.training/models/candidate/evaluation-tables.bin `
+  10 8 10000 8 1
 ```
 
-引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
+引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。`opponent`へ`model=<path>`を指定すると、両者のMulti-ProbCutを無効化し、同じ探索条件で評価モデルだけを比較する。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
 
 ## テスト
 
