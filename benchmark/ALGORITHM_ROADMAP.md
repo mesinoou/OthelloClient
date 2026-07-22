@@ -373,6 +373,10 @@ TTは追加配列を持たず、WLD盤面キーを補数化して通常評価値
 - Edax L7 100局は同じopening seedのv1.0.0比較に対してスコア率5 point超の低下を不採用条件とする。平均石差は記録するが採否には使わない
 - 8秒または10秒4Tの先後2局で違法手、未完了、時間超過0件
 
+### Result
+
+採用。8秒4Tで12〜20空き60/60をWLD完読し、比較可能54局面の勝敗不一致0。20空きは平均596 ms、最大2,483 msだった。Edax L7同一100局は46.5%でv1.0.0の44.5%に対して+2.0 point、実サーバ2局もWLD 40/40、timeoutと誤PUT 0で完走した。詳細は`benchmark/results/search-017-wld-endgame-search-2026-07-22.md`を参照する。
+
 ## SEARCH-014: Interior YBWC split points
 
 ### Hypothesis
