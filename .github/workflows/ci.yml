@@ -44,11 +44,14 @@ jobs:
             "BitBoardTest",
             "GameReplayerTest",
             "EvaluatorTest",
+            "LearnedEvaluatorTest",
             "OpeningBookTest",
             "EndgameRegionAnalyzerTest",
             "SearchEngineTest",
             "OthelloClientProtocolTest",
-            "EdaxGtpEngineTest"
+            "EdaxGtpEngineTest",
+            "RuntimeConfigurationTest",
+            "OthelloPonderingTest"
           )
           foreach ($test in $tests) {
             java -cp .build $test
