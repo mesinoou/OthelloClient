@@ -70,6 +70,10 @@ public final class EvaluationMatchRunner {
                 + ", maxDepth=" + settings.maxDepth
                 + ", threads=" + settings.threads
                 + ", ponderMillis=" + settings.ponderMillis
+                + ", multiProbCut="
+                + (settings.opponent == Opponent.MODEL
+                    ? "off(model-match)"
+                    : settings.multiProbCutEnabled)
                 + ", openingBook=off"
         );
 
@@ -328,19 +332,18 @@ public final class EvaluationMatchRunner {
             this.name = name;
             this.assignedColor = assignedColor;
             TranspositionTable table = new TranspositionTable(TABLE_CAPACITY);
-            engine = settings.opponent == Opponent.MODEL
-                ? new SearchEngine(
-                    evaluator,
-                    table,
-                    true,
-                    0,
-                    true,
-                    true,
-                    true,
-                    false,
-                    true
-                )
-                : new SearchEngine(evaluator, table);
+            engine = new SearchEngine(
+                evaluator,
+                table,
+                true,
+                0,
+                true,
+                true,
+                true,
+                settings.opponent != Opponent.MODEL
+                    && settings.multiProbCutEnabled,
+                true
+            );
             limits = new SearchLimits(
                 settings.timeMillis,
                 settings.maxDepth,
@@ -654,6 +657,7 @@ public final class EvaluationMatchRunner {
         private final int edaxLevel;
         private final long openingSeed;
         private final long ponderMillis;
+        private final boolean multiProbCutEnabled;
 
         private Settings(
             Path modelPath,
@@ -666,7 +670,8 @@ public final class EvaluationMatchRunner {
             int threads,
             int edaxLevel,
             long openingSeed,
-            long ponderMillis
+            long ponderMillis,
+            boolean multiProbCutEnabled
         ) {
             this.modelPath = modelPath;
             this.opponentModelPath = opponentModelPath;
@@ -679,16 +684,17 @@ public final class EvaluationMatchRunner {
             this.edaxLevel = edaxLevel;
             this.openingSeed = openingSeed;
             this.ponderMillis = ponderMillis;
+            this.multiProbCutEnabled = multiProbCutEnabled;
         }
 
         private static Settings parse(String[] args) {
-            if (args.length < 2 || args.length > 10) {
+            if (args.length < 2 || args.length > 11) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
                         + "<handcrafted|edax|model=path> [pairs] "
                         + "[openingPlies] "
                         + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
-                        + "[openingSeed] [ponderMillis]"
+                        + "[openingSeed] [ponderMillis] [multiProbCut]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
@@ -715,6 +721,7 @@ public final class EvaluationMatchRunner {
             int edaxLevel = integerArg(args, 7, 4);
             long openingSeed = longArg(args, 8, DEFAULT_OPENING_SEED);
             long ponderMillis = longArg(args, 9, 0L);
+            boolean multiProbCutEnabled = booleanArg(args, 10, true);
             if (pairs < 1 || pairs > 1000) {
                 throw new IllegalArgumentException("pairs must be 1..1000");
             }
@@ -753,7 +760,8 @@ public final class EvaluationMatchRunner {
                 threads,
                 edaxLevel,
                 openingSeed,
-                ponderMillis
+                ponderMillis,
+                multiProbCutEnabled
             );
         }
 
@@ -775,6 +783,25 @@ public final class EvaluationMatchRunner {
             return args.length > index
                 ? Long.parseLong(args[index])
                 : defaultValue;
+        }
+
+        private static boolean booleanArg(
+            String[] args,
+            int index,
+            boolean defaultValue
+        ) {
+            if (args.length <= index) {
+                return defaultValue;
+            }
+            if ("true".equalsIgnoreCase(args[index])) {
+                return true;
+            }
+            if ("false".equalsIgnoreCase(args[index])) {
+                return false;
+            }
+            throw new IllegalArgumentException(
+                "boolean argument must be true or false"
+            );
         }
     }
 

@@ -111,7 +111,7 @@ java -cp .build EvaluationMatchRunner `
   10 8 10000 8 1
 ```
 
-引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。`opponent`へ`model=<path>`を指定すると、両者のMulti-ProbCutを無効化し、同じ探索条件で評価モデルだけを比較する。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
+引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel openingSeed ponderMillis multiProbCut`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。末尾の`multiProbCut`は省略時`true`で、`false`を指定するとモデル固有MPCの効果を除外できる。`opponent`へ`model=<path>`を指定すると、両者のMulti-ProbCutを強制的に無効化し、同じ探索条件で評価モデルだけを比較する。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
 
 ## テスト
 
