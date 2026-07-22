@@ -1,0 +1,15 @@
+CLIENT-001 real-server smoke test
+Date: 2026-07-22
+Server: OthelloServer.jar -timeout 10 -debug -trans
+Clients: 4 threads, 1000 ms/move, TT 262144, ponder on, ratio 0.8
+
+Game 1: PonderC 40-24 PonderD
+PonderC: starts=29 completed=27 interrupted=2 prediction=26/27 ownInitialTtHit=27/31 stopP95Millis=4.193 erroneousPuts=0
+PonderD: starts=31 completed=27 interrupted=4 prediction=24/27 ownInitialTtHit=27/29 stopP95Millis=4.294 erroneousPuts=0
+
+Game 2: PonderE 36-28 PonderF
+PonderE: starts=29 completed=26 interrupted=3 prediction=24/26 ownInitialTtHit=28/31 stopP95Millis=4.125 erroneousPuts=0
+PonderF: starts=31 completed=28 interrupted=3 prediction=25/28 ownInitialTtHit=26/29 stopP95Millis=5.025 erroneousPuts=0
+
+Combined: starts=120 completed=108 interrupted=12 prediction=99/108 ownInitialTtHit=108/120 maxStopP95Millis=5.025 erroneousPuts=0
+Client stderr bytes=0; server stderr bytes=0; timeout losses=0; unfinished games=0.
