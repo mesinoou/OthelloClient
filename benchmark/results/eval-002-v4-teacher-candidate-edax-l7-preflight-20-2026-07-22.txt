@@ -1,0 +1,29 @@
+evaluation match
+model=learned-table-v1 (scoreScale=6400, divisor=1, bound=62375, path=D:\�̓_���|�[�g\OthelloClient\.training\models\pattern-evaluation-v4-teacher-cuda-e40\evaluation-tables.bin)
+opponent=EDAX, edaxLevel=7
+pairs=10, games=20, openingPlies=8, openingSeed=20260721
+searchTimeMillis=100, maxDepth=64, threads=1, ponderMillis=0, openingBook=off
+game=1/20 opening=1 learned=black result=LOSS margin=-26 discs=19-45 moves=60 elapsed=2.020s
+game=2/20 opening=1 learned=white result=WIN margin=+2 discs=31-33 moves=60 elapsed=1.990s
+game=3/20 opening=2 learned=black result=WIN margin=+4 discs=34-30 moves=60 elapsed=2.016s
+game=4/20 opening=2 learned=white result=WIN margin=+2 discs=31-33 moves=60 elapsed=2.019s
+game=5/20 opening=3 learned=black result=LOSS margin=-30 discs=17-47 moves=60 elapsed=1.990s
+game=6/20 opening=3 learned=white result=WIN margin=+61 discs=1-62 moves=59 elapsed=1.987s
+game=7/20 opening=4 learned=black result=WIN margin=+4 discs=34-30 moves=60 elapsed=1.966s
+game=8/20 opening=4 learned=white result=LOSS margin=-22 discs=43-21 moves=60 elapsed=1.978s
+game=9/20 opening=5 learned=black result=WIN margin=+2 discs=33-31 moves=60 elapsed=1.964s
+game=10/20 opening=5 learned=white result=WIN margin=+2 discs=31-33 moves=60 elapsed=1.982s
+game=11/20 opening=6 learned=black result=DRAW margin=+0 discs=32-32 moves=60 elapsed=2.071s
+game=12/20 opening=6 learned=white result=WIN margin=+4 discs=30-34 moves=60 elapsed=2.040s
+game=13/20 opening=7 learned=black result=WIN margin=+10 discs=37-27 moves=60 elapsed=1.994s
+game=14/20 opening=7 learned=white result=LOSS margin=-30 discs=47-17 moves=60 elapsed=2.020s
+game=15/20 opening=8 learned=black result=LOSS margin=-30 discs=17-47 moves=60 elapsed=2.000s
+game=16/20 opening=8 learned=white result=LOSS margin=-12 discs=38-26 moves=60 elapsed=2.063s
+game=17/20 opening=9 learned=black result=LOSS margin=-10 discs=27-37 moves=60 elapsed=2.094s
+game=18/20 opening=9 learned=white result=LOSS margin=-16 discs=40-24 moves=60 elapsed=2.021s
+game=19/20 opening=10 learned=black result=LOSS margin=-38 discs=13-51 moves=60 elapsed=2.006s
+game=20/20 opening=10 learned=white result=DRAW margin=+0 discs=32-32 moves=60 elapsed=2.029s
+summary
+games=20 wins=9 draws=2 losses=9 scoreRate=50.00% averageMargin=-6.15 elapsed=40.249s
+learned: moves=522 avgMove=73.336ms avgDepth=8.46 nodes=46776620 nodesPerSecond=1221907 budgetStops=379 exactMoves=143 initialTtHits=480 wldAttempts=142 wldSolutions=142 wldNodes=266422 wldSeconds=0.085
+edax: moves=517 avgMove=3.525ms
