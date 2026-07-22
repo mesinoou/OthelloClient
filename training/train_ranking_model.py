@@ -47,6 +47,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-anchor", type=float, default=0.20)
     parser.add_argument("--parameter-anchor", type=float, default=1.0e-3)
     parser.add_argument("--rank-logit-scale", type=float, default=4.0)
+    parser.add_argument("--pairwise-loss-weight", type=float, default=1.0)
+    parser.add_argument("--top1-loss-weight", type=float, default=0.0)
     parser.add_argument("--all-parents", action="store_true")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=20260804)
@@ -128,6 +130,32 @@ def ranking_pairs(
     )
 
 
+def ranking_groups(
+    data: dict[str, np.ndarray],
+    indices: np.ndarray,
+    device: Any,
+) -> list[tuple[Any, Any]]:
+    local = {int(index): offset for offset, index in enumerate(indices)}
+    parents: dict[int, list[int]] = {}
+    for index in indices:
+        parents.setdefault(int(data["parent_id"][index]), []).append(int(index))
+    groups = []
+    for rows in parents.values():
+        target = np.asarray([int(data["deep_score"][row]) for row in rows])
+        best = np.flatnonzero(target == target.max())
+        groups.append(
+            (
+                torch.as_tensor(
+                    [local[row] for row in rows],
+                    dtype=torch.long,
+                    device=device,
+                ),
+                torch.as_tensor(best, dtype=torch.long, device=device),
+            )
+        )
+    return groups
+
+
 def select_phase(
     data: dict[str, np.ndarray],
     phase: int,
@@ -147,6 +175,21 @@ def ranking_loss(
     left, right, weights = pairs
     difference = prediction[left, 0] - prediction[right, 0]
     return (torch.nn.functional.softplus(-scale * difference) * weights).mean()
+
+
+def top1_loss(
+    prediction: Any,
+    groups: list[tuple[Any, Any]],
+    scale: float,
+) -> Any:
+    losses = []
+    for rows, best in groups:
+        logits = prediction[rows, 0] * scale
+        losses.append(
+            torch.logsumexp(logits, dim=0)
+            - torch.logsumexp(logits[best], dim=0)
+        )
+    return torch.stack(losses).mean()
 
 
 def validation_metrics(
@@ -200,6 +243,12 @@ def fine_tune_phase(
         score_scale,
         device,
     )
+    train_groups = ranking_groups(train, train_indices, device)
+    validation_groups = ranking_groups(
+        validation,
+        validation_indices,
+        device,
+    )
 
     model = TorchPatternModel(base).to(device)
     model.train()
@@ -220,9 +269,14 @@ def fine_tune_phase(
         model.train()
         optimizer.zero_grad(set_to_none=True)
         prediction = model(train_batch)
-        rank_loss = ranking_loss(
+        pair_loss = ranking_loss(
             prediction,
             train_pairs,
+            args.rank_logit_scale,
+        )
+        best_move_loss = top1_loss(
+            prediction,
+            train_groups,
             args.rank_logit_scale,
         )
         output_anchor = torch.square(
@@ -238,7 +292,8 @@ def fine_tune_phase(
             if "_w" in name
         )
         loss = (
-            rank_loss
+            args.pairwise_loss_weight * pair_loss
+            + args.top1_loss_weight * best_move_loss
             + args.output_anchor * output_anchor
             + args.parameter_anchor * parameter_anchor
             + args.l2 * weight_decay
@@ -249,11 +304,20 @@ def fine_tune_phase(
         model.eval()
         with torch.no_grad():
             validation_prediction = model(validation_batch)
+            validation_pair_loss = ranking_loss(
+                validation_prediction,
+                validation_pairs,
+                args.rank_logit_scale,
+            )
+            validation_top1_loss = top1_loss(
+                validation_prediction,
+                validation_groups,
+                args.rank_logit_scale,
+            )
             validation_loss = float(
-                ranking_loss(
-                    validation_prediction,
-                    validation_pairs,
-                    args.rank_logit_scale,
+                (
+                    args.pairwise_loss_weight * validation_pair_loss
+                    + args.top1_loss_weight * validation_top1_loss
                 ).item()
             )
             metrics = validation_metrics(
@@ -263,8 +327,11 @@ def fine_tune_phase(
             )
         result = {
             "epoch": epoch,
-            "train_rank_loss": float(rank_loss.item()),
-            "validation_rank_loss": validation_loss,
+            "train_pairwise_loss": float(pair_loss.item()),
+            "train_top1_loss": float(best_move_loss.item()),
+            "validation_objective": validation_loss,
+            "validation_pairwise_loss": float(validation_pair_loss.item()),
+            "validation_top1_loss": float(validation_top1_loss.item()),
             **metrics,
         }
         history.append(result)
@@ -304,6 +371,10 @@ def main() -> int:
     args = parse_args()
     if args.epochs < 1 or args.patience < 1:
         raise ValueError("epochs and patience must be positive")
+    if args.pairwise_loss_weight < 0.0 or args.top1_loss_weight < 0.0:
+        raise ValueError("ranking loss weights must be non-negative")
+    if args.pairwise_loss_weight + args.top1_loss_weight == 0.0:
+        raise ValueError("at least one ranking loss weight must be positive")
     if args.output_dir.exists():
         if not args.overwrite:
             raise FileExistsError(
