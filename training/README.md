@@ -180,6 +180,15 @@ python -m training.train_ranking_model `
 
 順位学習は候補モデルを別ディレクトリへ出力し、`data/evaluation-tables.bin`を直接変更しない。深さ安定率、順位指標、固定深さ対戦、Edax戦の順に採用判定する。
 
+学習済み候補を教師探索の再実行なしで同じTSVへ追加採点する場合は次を使う。
+
+```powershell
+java -cp .build RankingModelScorer `
+  .training/ranking/scores-d8-d10.tsv `
+  .training/ranking/scores-with-candidate.tsv `
+  ranking=.training/models/eval-ranking/evaluation-tables.bin
+```
+
 ### 2.3 小規模確認
 
 ```powershell
