@@ -32,8 +32,9 @@
 | 9 | SEARCH-013 | Calibrated Multi-ProbCut | 統計的な浅い探索による枝刈り | selective | L0-L6, L7 |
 | 10 | RUNTIME-001 | Environment profiling and auto-sizing | 本番CPU・heapへの適応 | configuration | L0, L1, L3, L5, L7 |
 | 11 | CLIENT-001 | Opponent-turn pondering | 相手思考時間で共有TTを予熱 | timing | L0, L1, L4, L5, L7 |
-| 12 | SEARCH-014 | Interior YBWC split points | 不均衡な部分木で4T利用率向上 | scheduling | L0-L5, L7 |
-| 13 | SEARCH-015 | Timed-search Lazy SMP helper | 反復深化中のTT先行生成 | selective scheduling | L0-L5, L7 |
+| 12 | SEARCH-017 | WLD endgame proof | 勝率に不要な終局石差比較を省略 | none for outcome | L0-L5, L7 |
+| 13 | SEARCH-014 | Interior YBWC split points | 不均衡な部分木で4T利用率向上 | scheduling | L0-L5, L7 |
+| 14 | SEARCH-015 | Timed-search Lazy SMP helper | 反復深化中のTT先行生成 | selective scheduling | L0-L5, L7 |
 
 各実験は、その時点の最新採用ベースラインから新しいブランチを作る。不採用実験の実装を次の候補へ引き継がない。前段が不採用でも、明示した依存関係がない次候補は実施できる。
 
@@ -352,6 +353,25 @@ if shallowScore <= (alpha - b - t * sigma) / a: fail low
 - `mpcAttempts`, `mpcCuts`, verification sampleの誤差
 - 4Tノード15%以上削減または到達深さ+0.75 plyとEdax非劣性を要求
 - false cut率超過、特定phaseのsample不足、棋力悪化で不採用
+
+## SEARCH-017: WLD endgame proof
+
+### Hypothesis
+
+大会順位が勝敗だけで決まり石差を使わない場合、終盤探索値を勝ち・引分・負けの3値へ限定すると、同じ勝敗となる終局石差の比較を省略できる。既存PVS、終盤4手solver、parity orderingは再利用し、WLD中は選択的なLMRとMulti-ProbCutを無効にする。
+
+初期設定は`1000 ms未満=14空き`、`1000 ms以上=16空き`、`3000 ms以上=18空き`、大会内部時間`8000 ms以上=20空き`とする。通常探索depth 4を先に確保し、WLD試行は総時間の65%で打ち切る。証明できない計算機・難局面では残り35%を通常の反復深化へ戻し、WLD途中値は採用しない。
+
+TTは追加配列を持たず、WLD盤面キーを補数化して通常評価値と分離する。WLDは理論上の最大値である勝ちを見つけた時点で、そのnodeの残り手を探索しない。
+
+### Decision data
+
+- 2〜10空き54局面で石差完全読みの符号と一致し、1T・4TのWLD結果不一致0件
+- 12・14・16・18・20空きの固定局面で勝敗不一致0件
+- 8秒4Tで18空き12/12、20空き11/12以上をWLD完読
+- WLD失敗時の合法手、総時間上限、通常探索復帰を確認
+- Edax L7 100局は同じopening seedのv1.0.0比較に対してスコア率5 point超の低下を不採用条件とする。平均石差は記録するが採否には使わない
+- 8秒または10秒4Tの先後2局で違法手、未完了、時間超過0件
 
 ## SEARCH-014: Interior YBWC split points
 

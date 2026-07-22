@@ -171,8 +171,8 @@ public final class OthelloClient {
             System.out.println(
                 "探索設定: threads=" + searchThreads
                     + ", timeMillis=" + timeMillis
-                    + ", endgameThreshold="
-                    + SearchEngine.endgameThresholdFor(timeMillis)
+                    + ", wldThreshold="
+                    + SearchEngine.wldThresholdFor(timeMillis)
                     + " (ルート並列探索)"
             );
             System.out.println(
@@ -591,7 +591,14 @@ public final class OthelloClient {
                     + (result.endgameSearch()
                         ? ", endgameEmpties=" + result.endgameEmpties()
                         : "")
-                    + (result.exactSolution() ? ", exact" : "")
+                    + (result.wldSearch()
+                        ? ", wld="
+                            + (result.wldSolution() ? "solved" : "fallback")
+                            + ", wldNodes=" + result.wldNodes()
+                            + ", wldMillis="
+                            + result.wldElapsedNanos() / 1_000_000L
+                        : "")
+                    + (result.exactSolution() ? ", proven" : "")
                     + (result.timedOut() ? ", timeout" : "")
             );
         }

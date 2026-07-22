@@ -10,6 +10,7 @@ public final class SearchEngineTest {
     public static void main(String[] args) throws Exception {
         testAgainstReferenceNegamax();
         testEndgameThresholdSelection();
+        testWldScores();
         testTranspositionTableDepthGate();
         testSpecializedLeafSearch();
         testExactLastNSolverEligibility();
@@ -24,6 +25,7 @@ public final class SearchEngineTest {
         testMultiProbCutCalibration();
         testParallelMatchesSequential();
         testExactEndgame();
+        testWldMatchesExactOutcome();
         testExactEndgameAtThreshold();
         testEndgameTimeoutFallback();
         testParallelEndgameTimeout();
@@ -69,6 +71,28 @@ public final class SearchEngineTest {
         assertEquals(16, SearchEngine.endgameThresholdFor(3_000L), "3s threshold");
         assertEquals(16, SearchEngine.endgameThresholdFor(8_000L), "8s threshold");
         assertEquals(18, SearchEngine.endgameThresholdFor(20_000L), "20s threshold");
+        assertEquals(14, SearchEngine.wldThresholdFor(999L), "999ms WLD threshold");
+        assertEquals(16, SearchEngine.wldThresholdFor(1_000L), "1s WLD threshold");
+        assertEquals(18, SearchEngine.wldThresholdFor(3_000L), "3s WLD threshold");
+        assertEquals(20, SearchEngine.wldThresholdFor(8_000L), "8s WLD threshold");
+        if (SearchEngine.wldTrialNanos(10_000_000_000L)
+            != 6_500_000_000L) {
+            throw new AssertionError("WLD trial budget is invalid");
+        }
+    }
+
+    private static void testWldScores() {
+        assertEquals(
+            Evaluator.WIN_SCORE,
+            SearchEngine.wldScoreForDifference(1),
+            "WLD win"
+        );
+        assertEquals(0, SearchEngine.wldScoreForDifference(0), "WLD draw");
+        assertEquals(
+            -Evaluator.WIN_SCORE,
+            SearchEngine.wldScoreForDifference(-1),
+            "WLD loss"
+        );
     }
 
     private static void testExactLastNSolverEligibility() {
@@ -191,7 +215,10 @@ public final class SearchEngineTest {
             true,
             SearchEngine.MAX_ENDGAME_THRESHOLD,
             true,
-            enabled
+            enabled,
+            true,
+            true,
+            false
         );
     }
 
@@ -291,7 +318,9 @@ public final class SearchEngineTest {
             SearchEngine.MAX_ENDGAME_THRESHOLD,
             true,
             true,
-            enabled
+            enabled,
+            true,
+            false
         );
     }
 
@@ -352,6 +381,27 @@ public final class SearchEngineTest {
         }
         if (!SearchEngine.ttEligible(2)) {
             throw new AssertionError("depth 2でTTが無効です。");
+        }
+        TranspositionTable table = new TranspositionTable(16);
+        table.store(1L, 2L, 4, 123, TranspositionTable.EXACT, 7);
+        if (TranspositionTable.probeFound(
+            table.probe(1L, 2L, TranspositionTable.WLD_MODE)
+        )) {
+            throw new AssertionError("通常探索のTT値がWLDへ混入しています。");
+        }
+        table.store(
+            1L,
+            2L,
+            4,
+            Evaluator.WIN_SCORE,
+            TranspositionTable.EXACT,
+            7,
+            TranspositionTable.WLD_MODE
+        );
+        long wldProbe = table.probe(1L, 2L, TranspositionTable.WLD_MODE);
+        if (!TranspositionTable.probeFound(wldProbe)
+            || TranspositionTable.probeValue(wldProbe) != Evaluator.WIN_SCORE) {
+            throw new AssertionError("WLDのTT値を参照できません。");
         }
     }
 
@@ -602,12 +652,113 @@ public final class SearchEngineTest {
             new SearchLimits(10_000L, empties, 1)
         );
         assertEquals(empties, result.completedDepth(), "exact depth");
-        assertEquals(expected, result.score(), "exact endgame score");
+        assertEquals(
+            Integer.signum(expected) * Evaluator.WIN_SCORE,
+            result.score(),
+            "WLD endgame score"
+        );
         assertLegalBestMove(endgame.position, endgame.color, result.bestSquare());
         if (!result.exactSolution()) {
             throw new AssertionError("完全読み結果として記録されていません。");
         }
+        if (!result.wldSearch() || !result.wldSolution()
+            || result.wldNodes() == 0L || result.wldElapsedNanos() == 0L) {
+            throw new AssertionError("WLD完全読みの計測値が記録されていません。");
+        }
         assertEquals(empties, result.endgameEmpties(), "endgame empties");
+    }
+
+    private static void testWldMatchesExactOutcome() {
+        SearchEngine exact = new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 17),
+            true,
+            SearchEngine.MIN_ENDGAME_THRESHOLD,
+            true,
+            true,
+            true,
+            true,
+            false
+        );
+        SearchEngine wld = new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 17),
+            true,
+            SearchEngine.MIN_ENDGAME_THRESHOLD
+        );
+        SearchEngine parallelWld = new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 17),
+            true,
+            SearchEngine.MIN_ENDGAME_THRESHOLD
+        );
+        try {
+            for (int empties = 2; empties <= 10; empties++) {
+                for (int seed = 1; seed <= 6; seed++) {
+                    PositionToMove sample = createEndgame(empties, seed);
+                    SearchLimits limits = new SearchLimits(60_000L, 64, 1);
+                    SearchResult exactResult = exact.search(
+                        sample.position,
+                        sample.color,
+                        limits
+                    );
+                    SearchResult wldResult = wld.search(
+                        sample.position,
+                        sample.color,
+                        limits
+                    );
+                    SearchResult parallelResult = parallelWld.search(
+                        sample.position,
+                        sample.color,
+                        new SearchLimits(60_000L, 64, 4)
+                    );
+                    String label = "WLD outcome " + empties
+                        + " empties seed " + seed;
+                    assertEquals(
+                        Integer.signum(exactResult.score())
+                            * Evaluator.WIN_SCORE,
+                        wldResult.score(),
+                        label
+                    );
+                    assertEquals(
+                        wldResult.score(),
+                        parallelResult.score(),
+                        label + " parallel"
+                    );
+                    if (!exactResult.exactSolution()
+                        || !wldResult.wldSolution()
+                        || !parallelResult.wldSolution()) {
+                        throw new AssertionError(label + " was not solved");
+                    }
+                    long legalMoves = BitBoard.legalMoves(
+                        sample.position.player(sample.color),
+                        sample.position.opponent(sample.color)
+                    );
+                    if (wldResult.bestSquare() < 0 && legalMoves != 0L) {
+                        throw new AssertionError(
+                            label + " returned pass, score=" + wldResult.score()
+                        );
+                    }
+                    if (legalMoves == 0L) {
+                        assertEquals(
+                            -1,
+                            wldResult.bestSquare(),
+                            label + " pass"
+                        );
+                    } else {
+                        assertLegalBestMove(
+                            sample.position,
+                            sample.color,
+                            wldResult.bestSquare()
+                        );
+                    }
+                }
+            }
+        } finally {
+            exact.shutdown();
+            wld.shutdown();
+            parallelWld.shutdown();
+        }
     }
 
     private static void testExactEndgameAtThreshold() {

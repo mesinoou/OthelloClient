@@ -28,6 +28,10 @@ public final class SearchResult {
     private final int openingBookWinRatePermille;
     private final boolean exactSolution;
     private final int endgameEmpties;
+    private final boolean wldSearch;
+    private final boolean wldSolution;
+    private final long wldNodes;
+    private final long wldElapsedNanos;
 
     public SearchResult(
         int bestSquare,
@@ -349,6 +353,72 @@ public final class SearchResult {
         long mpcLowCuts,
         long mpcProbeNodes
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            lmrSearches,
+            lmrResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes,
+            stabilityChecks,
+            stabilityCuts,
+            mpcAttempts,
+            mpcHighCuts,
+            mpcLowCuts,
+            mpcProbeNodes,
+            false,
+            false,
+            0L,
+            0L
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes,
+        long stabilityChecks,
+        long stabilityCuts,
+        long mpcAttempts,
+        long mpcHighCuts,
+        long mpcLowCuts,
+        long mpcProbeNodes,
+        boolean wldSearch,
+        boolean wldSolution,
+        long wldNodes,
+        long wldElapsedNanos
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -377,6 +447,10 @@ public final class SearchResult {
         this.openingBookWinRatePermille = openingBookWinRatePermille;
         this.exactSolution = exactSolution;
         this.endgameEmpties = endgameEmpties;
+        this.wldSearch = wldSearch;
+        this.wldSolution = wldSolution;
+        this.wldNodes = wldNodes;
+        this.wldElapsedNanos = wldElapsedNanos;
     }
 
     public int bestSquare() {
@@ -485,5 +559,21 @@ public final class SearchResult {
 
     public int endgameEmpties() {
         return endgameEmpties;
+    }
+
+    public boolean wldSearch() {
+        return wldSearch;
+    }
+
+    public boolean wldSolution() {
+        return wldSolution;
+    }
+
+    public long wldNodes() {
+        return wldNodes;
+    }
+
+    public long wldElapsedNanos() {
+        return wldElapsedNanos;
     }
 }

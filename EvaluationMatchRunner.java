@@ -432,6 +432,10 @@ public final class EvaluationMatchRunner {
         private long depthSum;
         private long budgetStops;
         private long exactMoves;
+        private long wldAttempts;
+        private long wldSolutions;
+        private long wldNodes;
+        private long wldElapsedNanos;
         private long initialTtHits;
         private long ponderMoves;
         private long ponderElapsedNanos;
@@ -452,6 +456,14 @@ public final class EvaluationMatchRunner {
             }
             if (result.exactSolution()) {
                 exactMoves++;
+            }
+            if (result.wldSearch()) {
+                wldAttempts++;
+                wldNodes += result.wldNodes();
+                wldElapsedNanos += result.wldElapsedNanos();
+                if (result.wldSolution()) {
+                    wldSolutions++;
+                }
             }
             if (initialTtHit) {
                 initialTtHits++;
@@ -477,6 +489,10 @@ public final class EvaluationMatchRunner {
             depthSum += other.depthSum;
             budgetStops += other.budgetStops;
             exactMoves += other.exactMoves;
+            wldAttempts += other.wldAttempts;
+            wldSolutions += other.wldSolutions;
+            wldNodes += other.wldNodes;
+            wldElapsedNanos += other.wldElapsedNanos;
             initialTtHits += other.initialTtHits;
             ponderMoves += other.ponderMoves;
             ponderElapsedNanos += other.ponderElapsedNanos;
@@ -505,13 +521,19 @@ public final class EvaluationMatchRunner {
                 System.out.printf(
                     Locale.ROOT,
                     " avgDepth=%.2f nodes=%d nodesPerSecond=%.0f "
-                        + "budgetStops=%d exactMoves=%d initialTtHits=%d",
+                        + "budgetStops=%d exactMoves=%d initialTtHits=%d "
+                        + "wldAttempts=%d wldSolutions=%d wldNodes=%d "
+                        + "wldSeconds=%.3f",
                     averageDepth,
                     nodes,
                     nodesPerSecond,
                     budgetStops,
                     exactMoves,
-                    initialTtHits
+                    initialTtHits,
+                    wldAttempts,
+                    wldSolutions,
+                    wldNodes,
+                    wldElapsedNanos / 1_000_000_000.0
                 );
                 if (ponderMoves > 0L) {
                     System.out.printf(
