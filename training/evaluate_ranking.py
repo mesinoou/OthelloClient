@@ -56,6 +56,34 @@ def top_set(values: np.ndarray) -> set[int]:
     return set(np.flatnonzero(values == maximum).tolist())
 
 
+def summarize_teacher(groups: Iterable[list[dict[str, str]]]) -> dict:
+    materialized = list(groups)
+    rows = [row for group in materialized for row in group]
+    stable = []
+    for group in materialized:
+        shallow = np.asarray([int(row["shallow_score"]) for row in group])
+        deep = np.asarray([int(row["deep_score"]) for row in group])
+        stable.append(bool(top_set(shallow) & top_set(deep)))
+    return {
+        "positions": len(materialized),
+        "moves": len(rows),
+        "mean_legal_moves": len(rows) / len(materialized),
+        "stable_top1_rate": float(np.mean(stable)),
+        "shallow_exact_rate": float(
+            np.mean([row["shallow_exact"] == "true" for row in rows])
+        ),
+        "deep_exact_rate": float(
+            np.mean([row["deep_exact"] == "true" for row in rows])
+        ),
+        "mean_shallow_nodes": float(
+            np.mean([int(row["shallow_nodes"]) for row in rows])
+        ),
+        "mean_deep_nodes": float(
+            np.mean([int(row["deep_nodes"]) for row in rows])
+        ),
+    }
+
+
 def summarize(groups: Iterable[list[dict[str, str]]], column: str) -> dict:
     top1 = []
     pairwise = []
@@ -127,17 +155,20 @@ def main() -> int:
         partitions[f"phase:{phase}"].append(rows)
         partitions[f"split:{split}/phase:{phase}"].append(rows)
 
-    result = {
-        partition: {
-            (
-                "teacher_shallow"
-                if column == "shallow_score"
-                else column.removeprefix("static_")
-            ): summarize(rows, column)
-            for column in model_columns
-        }
-        for partition, rows in sorted(partitions.items())
-    }
+    result = {}
+    for partition, rows in sorted(partitions.items()):
+        summaries = {"teacher": summarize_teacher(rows)}
+        summaries.update(
+            {
+                (
+                    "teacher_shallow"
+                    if column == "shallow_score"
+                    else column.removeprefix("static_")
+                ): summarize(rows, column)
+                for column in model_columns
+            }
+        )
+        result[partition] = summaries
     rendered = json.dumps(result, indent=2, ensure_ascii=False)
     print(rendered)
     if args.output is not None:
