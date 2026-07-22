@@ -140,6 +140,46 @@ python -m training.verify_dataset `
 
 モデル構造を変更する場合は`materialize_dataset.py`を変更するか、同じコーパスを読む別の変換器を追加する。コーパス自体は作り直さない。
 
+### 2.4 着手順位データ
+
+評価値の平均二乗誤差だけでなく、各合法手の順位を検証する場合は、v4から分割・フェーズ別に局面を抽出し、Java探索器で全合法手を採点する。
+
+```powershell
+python -m training.sample_ranking_positions --overwrite
+
+javac --release 11 -encoding UTF-8 -d .build *.java
+java -cp .build RankingTeacherGenerator `
+  .training/ranking/positions.tsv `
+  .training/ranking/scores-d8-d10.tsv `
+  data/evaluation-tables.bin 8 10 30000 `
+  current=data/evaluation-tables.bin `
+  candidate=.training/models/candidate/evaluation-tables.bin
+
+python -m training.evaluate_ranking `
+  .training/ranking/scores-d8-d10.tsv `
+  --output .training/ranking/metrics-d8-d10.json
+```
+
+抽出器は合法手が2手以上ある局面だけを選ぶ。教師探索はLMR、Multi-ProbCut、WLDを無効化し、深さ8と10の最善手一致率を教師安定性として記録する。完全読みが成立した局面では完全読みの石差を使用する。評価スクリプトはtop-1一致率、一対比較正解率、Spearman順位相関、深さ10の最善手に対するregretを分割・フェーズ別に出力する。
+
+深さ8と10で最善手が一致した高信頼局面を使い、既存モデルを順位損失でファインチューニングする手順は次のとおりである。元の4百万局面学習を維持するため、既存モデルの出力とパラメータをアンカーとして使用する。
+
+```powershell
+python -m training.materialize_ranking_dataset `
+  .training/ranking/scores-d8-d10.tsv `
+  --output-dir .training/datasets/ranking-v1-d8-d10 `
+  --overwrite
+
+python -m training.train_ranking_model `
+  --dataset-dir .training/datasets/ranking-v1-d8-d10 `
+  --base-model .training/models/baseline/model-float.npz `
+  --output-dir .training/models/eval-ranking `
+  --device cuda `
+  --overwrite
+```
+
+順位学習は候補モデルを別ディレクトリへ出力し、`data/evaluation-tables.bin`を直接変更しない。深さ安定率、順位指標、固定深さ対戦、Edax戦の順に採用判定する。
+
 ### 2.3 小規模確認
 
 ```powershell

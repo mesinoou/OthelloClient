@@ -51,9 +51,27 @@ from training.build_corpus import (
     transform_bitboard,
 )
 from training.materialize_dataset import aggregate_observations
+from training.evaluate_ranking import average_ranks, pairwise_accuracy
+from training.sample_ranking_positions import phase_ids
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
+    def test_ranking_phase_boundaries_match_model_phases(self) -> None:
+        ply = np.asarray([8, 19, 20, 29, 30, 39, 40, 52], dtype=np.uint8)
+        np.testing.assert_array_equal(
+            phase_ids(ply),
+            np.asarray([0, 0, 0, 0, 1, 1, 2, 3]),
+        )
+
+    def test_ranking_metrics_handle_ties(self) -> None:
+        values = np.asarray([30, 10, 30, 20])
+        np.testing.assert_allclose(average_ranks(values), (2.5, 0.0, 2.5, 1.0))
+        target = np.asarray([3, 2, 1])
+        self.assertAlmostEqual(
+            5.0 / 6.0,
+            pairwise_accuracy(np.asarray([2, 2, 1]), target),
+        )
+
     def test_initial_moves_match_mirrored_source_coordinates(self) -> None:
         black, white = initial_position()
         moves = legal_moves(black, white)
