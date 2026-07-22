@@ -27,6 +27,7 @@
 
 | ID | Status | Base | Branch | Single change | Validation / benchmark | Result | Decision |
 |---|---|---|---|---|---|---|---|
+| RELEASE-001 | frozen | `baseline/opponent-turn-pondering-20260722` | `codex/release-v1.0.0` | 採用済み構成をv1.0.0として最終検証 | `benchmark/results/release-v1.0.0-final-verification-2026-07-22.md` | 回帰11/11、固定深さ736/736整合、Edax L6 49.5%・L7 36.5%・L8 36.0%、10秒4Tと実サーバ8秒2局完走 | `v1.0.0`として固定 |
 | BASE-20260721 | frozen | `50313ca` | `feature/learned-evaluation` | CUDA e80学習評価を含む現行基準 | `benchmark/results/learned-e80-2026-07-21.md` | Edax L7 100局で50-1-49 | `baseline/learned-e80-20260721`として固定 |
 | BENCH-002 | measurement | `baseline/stability-cutoff-20260721` | `codex/algorithm-roadmap-v1` | 現在版の対Edax強度をL6/L7/L8各100局で再測定 | `benchmark/results/current-strength-2026-07-21.md` | L6 64.0%、L7 53.0%、L8 37.0%、大会条件2局完走 | 現在の強さをEdax L7付近と判定 |
 | BENCH-001 | infrastructure | `baseline/learned-e80-20260721` | `codex/parallel-benchmark-v1` | 並列探索の再現可能な固定深さ・固定時間計測を追加 | `benchmark/results/parallel-search-v1-2026-07-21.md` | 固定深さ128結果で不一致0件、4T 1.68倍、8T 1.89倍 | 計測基盤として採用、探索動作は変更なし |

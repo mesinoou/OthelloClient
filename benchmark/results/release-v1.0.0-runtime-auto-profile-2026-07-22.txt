@@ -1,0 +1,9 @@
+実行環境: processors=20, maxHeapMiB=8160.0, os=Windows 11, arch=amd64, java=21
+自動thread候補: threads=1, timedDepth=10, timedNodes=280576, fixedMillis=not-measured
+自動thread候補: threads=2, timedDepth=10, timedNodes=294924, fixedMillis=not-measured
+自動thread候補: threads=4, timedDepth=10, timedNodes=347836, fixedMillis=not-measured
+自動thread候補: threads=8, timedDepth=11, timedNodes=395375, fixedMillis=161.632
+実行時設定: threads=8 (auto), ttEntries=4194304 (auto), ttEstimatedMiB=124.0, diagnosticMillis=905
+サーバに接続を試みます: 127.0.0.1:1
+通信中にエラーが発生しました。
+Connection refused: no further information

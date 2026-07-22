@@ -87,7 +87,7 @@ java -cp .build EvaluationMatchRunner `
 
 ## テスト
 
-改良実験の実行順、変更種別ごとの必須項目、性能・棋力の合格条件は[benchmark/TEST_PLAN.md](benchmark/TEST_PLAN.md)にまとめている。次に試す探索・評価アルゴリズムの仕様と順序は[benchmark/ALGORITHM_ROADMAP.md](benchmark/ALGORITHM_ROADMAP.md)を参照する。以下は個別コマンドの参照用である。
+改良実験の実行順、変更種別ごとの必須項目、性能・棋力の合格条件は[benchmark/TEST_PLAN.md](benchmark/TEST_PLAN.md)にまとめている。v1.0.0の構成、最終性能、統計上の限界は[benchmark/results/release-v1.0.0-final-verification-2026-07-22.md](benchmark/results/release-v1.0.0-final-verification-2026-07-22.md)に記録している。次に試す探索・評価アルゴリズムの仕様と順序は[benchmark/ALGORITHM_ROADMAP.md](benchmark/ALGORITHM_ROADMAP.md)を参照する。以下は個別コマンドの参照用である。
 
 ビルド後、次の回帰テストを実行する。
 
