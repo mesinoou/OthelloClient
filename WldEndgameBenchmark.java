@@ -47,7 +47,8 @@ public final class WldEndgameBenchmark {
 
         System.out.println(
             "mode,threads,empties,solved,searches,avgMillis,maxMillis,"
-                + "avgNodes,wldAttempts,wldSolutions,"
+                + "avgDepth,avgNodes,timedOut,illegalMoves,wldAttempts,"
+                + "wldSolutions,wldFallbacks,avgWldMillis,avgWldNodes,"
                 + "outcomeCompared,outcomeMismatches,scoreChecksum"
         );
         runMode(
@@ -97,11 +98,16 @@ public final class WldEndgameBenchmark {
         long elapsedNanos = 0L;
         long maximumElapsedNanos = 0L;
         long nodes = 0L;
+        long depthSum = 0L;
+        long wldElapsedNanos = 0L;
+        long wldNodes = 0L;
         long scoreChecksum = 1L;
         int solved = 0;
         int searches = 0;
         int wldAttempts = 0;
         int wldSolutions = 0;
+        int timedOut = 0;
+        int illegalMoves = 0;
         int outcomeCompared = 0;
         int outcomeMismatches = 0;
 
@@ -144,6 +150,8 @@ public final class WldEndgameBenchmark {
                 }
                 if (result.wldSearch()) {
                     wldAttempts++;
+                    wldElapsedNanos += result.wldElapsedNanos();
+                    wldNodes += result.wldNodes();
                 }
                 if (result.wldSolution()) {
                     wldSolutions++;
@@ -155,6 +163,13 @@ public final class WldEndgameBenchmark {
                     result.elapsedNanos()
                 );
                 nodes += result.nodes();
+                depthSum += result.completedDepth();
+                if (result.timedOut()) {
+                    timedOut++;
+                }
+                if (!isLegalResult(sample, result)) {
+                    illegalMoves++;
+                }
                 scoreChecksum = 31L * scoreChecksum + result.score();
                 searches++;
             }
@@ -168,13 +183,39 @@ public final class WldEndgameBenchmark {
                 + "," + searches
                 + "," + elapsedNanos / searches / 1_000_000L
                 + "," + maximumElapsedNanos / 1_000_000L
+                + "," + (double) depthSum / searches
                 + "," + nodes / searches
+                + "," + timedOut
+                + "," + illegalMoves
                 + "," + wldAttempts
                 + "," + wldSolutions
+                + "," + (wldAttempts - wldSolutions)
+                + "," + (wldAttempts == 0
+                    ? 0L
+                    : wldElapsedNanos / wldAttempts / 1_000_000L)
+                + "," + (wldAttempts == 0
+                    ? 0L
+                    : wldNodes / wldAttempts)
                 + "," + outcomeCompared
                 + "," + outcomeMismatches
                 + "," + scoreChecksum
         );
+    }
+
+    private static boolean isLegalResult(
+        PositionToMove sample,
+        SearchResult result
+    ) {
+        long player = sample.position.player(sample.color);
+        long opponent = sample.position.opponent(sample.color);
+        long legalMoves = BitBoard.legalMoves(player, opponent);
+        if (legalMoves == 0L) {
+            return result.bestSquare() == -1;
+        }
+        int square = result.bestSquare();
+        return square >= 0
+            && square < 64
+            && (legalMoves & (1L << square)) != 0L;
     }
 
     private static PositionToMove createEndgame(int maximumEmpties, int seed) {
