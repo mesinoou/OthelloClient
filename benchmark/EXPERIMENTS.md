@@ -49,6 +49,7 @@
 | CLIENT-001 | accepted | `baseline/runtime-auto-sizing-20260722` | `codex/opponent-turn-pondering` | 相手手番探索で共有TTだけを予熱 | `benchmark/results/client-001-opponent-turn-pondering-2026-07-22.md` | 100局でscore -0.5 point、平均石差+1.25、自手深度+0.19、実サーバ2局でstop p95最大5.03 ms・誤PUT 0 | 既定offのまま`baseline/opponent-turn-pondering-20260722`として統合対象 |
 | SEARCH-012 | rejected | `e5b1304` | `codex/adaptive-lmr` | 深さ・手順・相手可動数に応じてLMRを2 ply化 | `benchmark/results/search-012-adaptive-lmr-2026-07-21.md` | 深さ10 node -5.80%、標準depth 9 -0.08%、500 ms深さ同値 | 効果不足のため実験ブランチへ保存 |
 | SEARCH-013 | accepted | `e5b1304` | `codex/multi-probcut` | holdout校正した4 ply Multi-ProbCut | `benchmark/results/search-013-multi-probcut-2026-07-21.md` | 深さ10 node -5.90%、10秒4T +0.125 ply、Edax L7 44.0%で非劣性 | 比較した2方式のうち効果が高いため統合対象 |
+| SEARCH-017 | accepted | `v1.0.0` | `codex/wld-endgame-search` | 終盤の石差完全読みを勝敗引分の3値WLD証明へ変更 | `benchmark/results/search-017-wld-endgame-search-2026-07-22.md` | 20空き12/12完読、比較可能54局面不一致0、Edax L7 46.5%対44.5%、実サーバ2局完走 | `baseline/wld-endgame-20260722`として統合対象 |
 | SEARCH-014 | planned | latest accepted | `codex/interior-ybwc` | 浅いplyのYBWC split pointを追加 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-013後 |
 | SEARCH-015 | planned | latest accepted | `codex/lazy-smp-helper` | 時間制限探索へ1本の決定的TT helperを追加 | `benchmark/ALGORITHM_ROADMAP.md` | 未実施 | SEARCH-014採用後 |
 

@@ -18,6 +18,8 @@ public final class SearchEngine {
 
     public static final int MIN_ENDGAME_THRESHOLD = 12;
     public static final int MAX_ENDGAME_THRESHOLD = 18;
+    public static final int MIN_WLD_THRESHOLD = 14;
+    public static final int MAX_WLD_THRESHOLD = 20;
 
     private static final int INFINITY = 1_000_000;
     private static final int STOP_CHECK_MASK = 1023;
@@ -26,6 +28,7 @@ public final class SearchEngine {
     private static final int LMR_MINIMUM_DEPTH = 5;
     private static final int LMR_MINIMUM_MOVE_INDEX = 4;
     private static final int ENDGAME_FALLBACK_DEPTH = 4;
+    private static final int WLD_TRIAL_PERCENT = 65;
     private static final int MIN_STABILITY_EMPTIES = 5;
     private static final int MAX_EDGE_STABLE_DISCS = 28;
     private static final int ODD_REGION_BONUS = 1;
@@ -49,10 +52,12 @@ public final class SearchEngine {
     private final boolean exactLastNSolverEnabled;
     private final boolean stabilityCutoffEnabled;
     private final boolean multiProbCutEnabled;
+    private final boolean wldEnabled;
     private final SearchContext context = new SearchContext();
     private final ThreadLocal<SearchContext> workerContexts =
         ThreadLocal.withInitial(SearchContext::new);
     private final AtomicBoolean stopRequested = new AtomicBoolean();
+    private final AtomicBoolean externalStopRequested = new AtomicBoolean();
     private final AtomicBoolean timedOut = new AtomicBoolean();
     private final CopyOnWriteArrayList<Future<?>> activeTasks =
         new CopyOnWriteArrayList<>();
@@ -65,6 +70,7 @@ public final class SearchEngine {
     private int workerThreadCount;
     private long deadlineNanos;
     private boolean exactSearchActive;
+    private boolean wldSearchActive;
 
     public SearchEngine() {
         this(new Evaluator(), new TranspositionTable(1 << 18));
@@ -150,6 +156,7 @@ public final class SearchEngine {
             lmrEnabled,
             exactLastNSolverEnabled,
             stabilityCutoffEnabled,
+            true,
             true
         );
     }
@@ -164,6 +171,30 @@ public final class SearchEngine {
         boolean stabilityCutoffEnabled,
         boolean multiProbCutEnabled
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            stabilityCutoffEnabled,
+            multiProbCutEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean stabilityCutoffEnabled,
+        boolean multiProbCutEnabled,
+        boolean wldEnabled
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
@@ -171,7 +202,7 @@ public final class SearchEngine {
         this.table = table;
         this.endgameOrderingEnabled = endgameOrderingEnabled;
         if (endgameThresholdOverride < 0
-            || endgameThresholdOverride > MAX_ENDGAME_THRESHOLD) {
+            || endgameThresholdOverride > MAX_WLD_THRESHOLD) {
             throw new IllegalArgumentException("invalid endgame threshold");
         }
         this.endgameThresholdOverride = endgameThresholdOverride;
@@ -180,6 +211,7 @@ public final class SearchEngine {
         this.stabilityCutoffEnabled = stabilityCutoffEnabled;
         this.multiProbCutEnabled = multiProbCutEnabled
             && MultiProbCut.supports(evaluator);
+        this.wldEnabled = wldEnabled;
     }
 
     public String evaluatorDescription() {
@@ -204,6 +236,7 @@ public final class SearchEngine {
     }
 
     public void stop() {
+        externalStopRequested.set(true);
         stopRequested.set(true);
         cancelActiveTasks();
     }
@@ -219,7 +252,15 @@ public final class SearchEngine {
             position.player(color),
             position.opponent(color)
         );
-        return TranspositionTable.probeFound(probe);
+        if (TranspositionTable.probeFound(probe)) {
+            return true;
+        }
+        long wldProbe = table.probe(
+            position.player(color),
+            position.opponent(color),
+            TranspositionTable.WLD_MODE
+        );
+        return TranspositionTable.probeFound(wldProbe);
     }
 
     public void shutdown() {
@@ -252,8 +293,10 @@ public final class SearchEngine {
         SearchLimits limits
     ) {
         stopRequested.set(false);
+        externalStopRequested.set(false);
         timedOut.set(false);
         exactSearchActive = false;
+        wldSearchActive = false;
         activeTasks.clear();
         context.reset();
         parallelMetrics.reset();
@@ -265,19 +308,24 @@ public final class SearchEngine {
         long durationNanos = limits.timeMillis() >= Long.MAX_VALUE / 1_000_000L
             ? Long.MAX_VALUE / 4L
             : limits.timeMillis() * 1_000_000L;
-        deadlineNanos = startNanos + durationNanos;
+        long hardDeadlineNanos = startNanos + durationNanos;
+        deadlineNanos = hardDeadlineNanos;
 
         long legalMoves = BitBoard.legalMoves(player, opponent);
         boolean rootPass = legalMoves == 0L;
         if (rootPass && BitBoard.legalMoves(opponent, player) == 0L) {
             return result(
                 -1,
-                evaluator.terminalScore(player, opponent),
+                terminalScore(player, opponent),
                 0,
                 startNanos,
                 false,
                 true,
-                0
+                0,
+                false,
+                false,
+                0L,
+                0L
             );
         }
 
@@ -292,11 +340,17 @@ public final class SearchEngine {
         int completedDepth = 0;
         boolean aborted = false;
         boolean exactSolution = false;
+        boolean wldAttempted = false;
+        boolean wldSolution = false;
+        long wldNodes = 0L;
+        long wldElapsedNanos = 0L;
         int emptyCount = BitBoard.countEmpty(player, opponent);
         int maximumDepth = Math.min(limits.maxDepth(), emptyCount);
         int endgameThreshold = endgameThresholdOverride > 0
             ? endgameThresholdOverride
-            : endgameThresholdFor(limits.timeMillis());
+            : wldEnabled
+                ? wldThresholdFor(limits.timeMillis())
+                : endgameThresholdFor(limits.timeMillis());
         boolean endgameSearch = emptyCount <= endgameThreshold
             && maximumDepth >= emptyCount;
         int endgameEmpties = endgameSearch ? emptyCount : 0;
@@ -307,56 +361,100 @@ public final class SearchEngine {
                 ? Math.min(ENDGAME_FALLBACK_DEPTH, emptyCount - 1)
                 : maximumDepth;
             for (int depth = 1; depth <= iterativeDepth; depth++) {
-                if (rootPass) {
-                    searchPassedRoot(player, opponent, depth);
-                } else if (shouldSearchParallel(
+                searchRootIteration(
+                    player,
+                    opponent,
                     legalMoves,
+                    rootPass,
                     depth,
-                    limits.threads()
-                )) {
-                    searchRootParallel(
-                        player,
-                        opponent,
-                        depth,
-                        bestSquare
-                    );
-                } else {
-                    searchRoot(
-                        player,
-                        opponent,
-                        depth,
-                        bestSquare
-                    );
-                }
+                    limits.threads(),
+                    bestSquare
+                );
                 bestSquare = context.rootBestSquare;
                 bestScore = context.rootScore;
                 completedDepth = depth;
                 checkStop(true, context);
             }
 
-            if (endgameSearch) {
-                exactSearchActive = true;
-                if (rootPass) {
-                    searchPassedRoot(player, opponent, emptyCount);
-                } else if (shouldSearchParallel(
-                    legalMoves,
-                    emptyCount,
-                    limits.threads()
-                )) {
-                    searchRootParallel(
-                        player,
-                        opponent,
-                        emptyCount,
-                        bestSquare
-                    );
-                } else {
-                    searchRoot(
-                        player,
-                        opponent,
-                        emptyCount,
-                        bestSquare
-                    );
+            if (endgameSearch && wldEnabled) {
+                long trialDeadline = wldTrialDeadline(
+                    startNanos,
+                    durationNanos,
+                    hardDeadlineNanos
+                );
+                if (System.nanoTime() - trialDeadline < 0L) {
+                    wldAttempted = true;
+                    long wldStarted = System.nanoTime();
+                    long nodesBefore = totalNodes();
+                    deadlineNanos = trialDeadline;
+                    exactSearchActive = true;
+                    wldSearchActive = true;
+                    try {
+                        searchRootIteration(
+                            player,
+                            opponent,
+                            legalMoves,
+                            rootPass,
+                            emptyCount,
+                            limits.threads(),
+                            bestSquare
+                        );
+                        bestSquare = context.rootBestSquare;
+                        bestScore = context.rootScore;
+                        completedDepth = emptyCount;
+                        exactSolution = true;
+                        wldSolution = true;
+                    } catch (SearchAbortedException abortedWld) {
+                        boolean trialTimedOut = timedOut.get()
+                            && !externalStopRequested.get()
+                            && System.nanoTime() - hardDeadlineNanos < 0L;
+                        if (!trialTimedOut) {
+                            throw abortedWld;
+                        }
+                        cancelActiveTasks();
+                        activeTasks.clear();
+                        stopRequested.set(false);
+                        timedOut.set(false);
+                        context.timedOut = false;
+                    } finally {
+                        wldNodes += totalNodes() - nodesBefore;
+                        wldElapsedNanos += System.nanoTime() - wldStarted;
+                        exactSearchActive = false;
+                        wldSearchActive = false;
+                        deadlineNanos = hardDeadlineNanos;
+                    }
                 }
+
+                if (!wldSolution) {
+                    for (int depth = iterativeDepth + 1;
+                        depth <= maximumDepth;
+                        depth++) {
+                        searchRootIteration(
+                            player,
+                            opponent,
+                            legalMoves,
+                            rootPass,
+                            depth,
+                            limits.threads(),
+                            bestSquare
+                        );
+                        bestSquare = context.rootBestSquare;
+                        bestScore = context.rootScore;
+                        completedDepth = depth;
+                        checkStop(true, context);
+                    }
+                }
+            } else if (endgameSearch) {
+                exactSearchActive = true;
+                searchRootIteration(
+                    player,
+                    opponent,
+                    legalMoves,
+                    rootPass,
+                    emptyCount,
+                    limits.threads(),
+                    bestSquare
+                );
                 bestSquare = context.rootBestSquare;
                 bestScore = context.rootScore;
                 completedDepth = emptyCount;
@@ -368,6 +466,8 @@ public final class SearchEngine {
             aborted = true;
         } finally {
             exactSearchActive = false;
+            wldSearchActive = false;
+            deadlineNanos = hardDeadlineNanos;
             cancelActiveTasks();
             activeTasks.clear();
         }
@@ -379,8 +479,35 @@ public final class SearchEngine {
             startNanos,
             aborted,
             exactSolution,
-            endgameEmpties
+            endgameEmpties,
+            wldAttempted,
+            wldSolution,
+            wldNodes,
+            wldElapsedNanos
         );
+    }
+
+    private void searchRootIteration(
+        long player,
+        long opponent,
+        long legalMoves,
+        boolean rootPass,
+        int depth,
+        int threads,
+        int previousBestSquare
+    ) {
+        if (rootPass) {
+            searchPassedRoot(player, opponent, depth);
+        } else if (shouldSearchParallel(legalMoves, depth, threads)) {
+            searchRootParallel(
+                player,
+                opponent,
+                depth,
+                previousBestSquare
+            );
+        } else {
+            searchRoot(player, opponent, depth, previousBestSquare);
+        }
     }
 
     public static int endgameThresholdFor(long timeMillis) {
@@ -396,6 +523,39 @@ public final class SearchEngine {
         return MIN_ENDGAME_THRESHOLD;
     }
 
+    public static int wldThresholdFor(long timeMillis) {
+        if (timeMillis >= 8_000L) {
+            return MAX_WLD_THRESHOLD;
+        }
+        if (timeMillis >= 3_000L) {
+            return 18;
+        }
+        if (timeMillis >= 1_000L) {
+            return 16;
+        }
+        return MIN_WLD_THRESHOLD;
+    }
+
+    static long wldTrialNanos(long durationNanos) {
+        long whole = durationNanos / 100L;
+        long remainder = durationNanos % 100L;
+        return whole * WLD_TRIAL_PERCENT
+            + remainder * WLD_TRIAL_PERCENT / 100L;
+    }
+
+    private static long wldTrialDeadline(
+        long startNanos,
+        long durationNanos,
+        long hardDeadlineNanos
+    ) {
+        long candidate = startNanos + wldTrialNanos(durationNanos);
+        return Math.min(candidate, hardDeadlineNanos);
+    }
+
+    private long totalNodes() {
+        return context.nodes + parallelMetrics.nodes.get();
+    }
+
     private SearchResult result(
         int bestSquare,
         int score,
@@ -403,7 +563,11 @@ public final class SearchEngine {
         long startNanos,
         boolean aborted,
         boolean exactSolution,
-        int endgameEmpties
+        int endgameEmpties,
+        boolean wldAttempted,
+        boolean wldSolution,
+        long wldNodes,
+        long wldElapsedNanos
     ) {
         long workerNodes = parallelMetrics.nodes.get();
         boolean searchTimedOut = timedOut.get();
@@ -436,7 +600,11 @@ public final class SearchEngine {
             context.mpcAttempts + parallelMetrics.mpcAttempts.get(),
             context.mpcHighCuts + parallelMetrics.mpcHighCuts.get(),
             context.mpcLowCuts + parallelMetrics.mpcLowCuts.get(),
-            context.mpcProbeNodes + parallelMetrics.mpcProbeNodes.get()
+            context.mpcProbeNodes + parallelMetrics.mpcProbeNodes.get(),
+            wldAttempted,
+            wldSolution,
+            wldNodes,
+            wldElapsedNanos
         );
     }
 
@@ -562,6 +730,9 @@ public final class SearchEngine {
             if (score > alpha) {
                 alpha = score;
             }
+            if (wldSearchActive && bestScore == Evaluator.WIN_SCORE) {
+                break;
+            }
         }
 
         commitRootResult(
@@ -614,6 +785,16 @@ public final class SearchEngine {
             INFINITY,
             context
         );
+        if (wldSearchActive && firstScore == Evaluator.WIN_SCORE) {
+            commitRootResult(
+                player,
+                opponent,
+                depth,
+                firstScore,
+                firstSquare
+            );
+            return;
+        }
         AtomicLong sharedBest = new AtomicLong(
             packBest(firstScore, 0, firstSquare)
         );
@@ -840,7 +1021,11 @@ public final class SearchEngine {
         boolean nullWindow = beta == alpha + 1;
         int tableBestSquare = -1;
         if (table != null && ttEligible(depth)) {
-            long probe = table.probe(player, opponent);
+            long probe = table.probe(
+                player,
+                opponent,
+                transpositionMode()
+            );
             if (TranspositionTable.probeFound(probe)) {
                 searchContext.transpositionHits++;
                 tableBestSquare = TranspositionTable.probeBestSquare(probe);
@@ -863,13 +1048,15 @@ public final class SearchEngine {
         }
 
         int empties = BitBoard.countEmpty(player, opponent);
-        if (stabilityCutoffEnabled && stabilityEligible(
-            exactSearchActive,
-            empties,
-            nullWindow,
-            alpha,
-            beta
-        )) {
+        if (stabilityCutoffEnabled
+            && !wldSearchActive
+            && stabilityEligible(
+                exactSearchActive,
+                empties,
+                nullWindow,
+                alpha,
+                beta
+            )) {
             int stabilityScore = stabilityCutoff(
                 player,
                 opponent,
@@ -897,7 +1084,7 @@ public final class SearchEngine {
         long legalMoves = BitBoard.legalMoves(player, opponent);
         if (legalMoves == 0L) {
             if (BitBoard.legalMoves(opponent, player) == 0L) {
-                int terminal = evaluator.terminalScore(player, opponent);
+                int terminal = terminalScore(player, opponent);
                 store(
                     player,
                     opponent,
@@ -963,7 +1150,7 @@ public final class SearchEngine {
             long flips = BitBoard.flips(player, opponent, move);
             long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
             long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
-            int score = -evaluator.terminalScore(
+            int score = -terminalScore(
                 nextOpponent,
                 nextPlayer
             );
@@ -1086,6 +1273,9 @@ public final class SearchEngine {
                 searchContext.betaCutoffs++;
                 break;
             }
+            if (wldSearchActive && bestScore == Evaluator.WIN_SCORE) {
+                break;
+            }
         }
 
         if (lmrBoundCanBeStored(
@@ -1118,6 +1308,7 @@ public final class SearchEngine {
         SearchContext searchContext
     ) {
         if (!multiProbCutEnabled
+            || exactSearchActive
             || searchContext.mpcProbeActive
             || !nullWindow) {
             return NO_MPC_CUTOFF;
@@ -1301,6 +1492,9 @@ public final class SearchEngine {
             );
             bestScore = Math.max(bestScore, score);
             alpha = Math.max(alpha, score);
+            if (wldSearchActive && bestScore == Evaluator.WIN_SCORE) {
+                return bestScore;
+            }
             if (alpha >= beta) {
                 searchContext.betaCutoffs++;
                 return bestScore;
@@ -1310,7 +1504,7 @@ public final class SearchEngine {
             return bestScore;
         }
         if (passed) {
-            return evaluator.terminalScore(player, opponent);
+            return terminalScore(player, opponent);
         }
         countExactNode(searchContext);
         return -solve4(
@@ -1358,6 +1552,9 @@ public final class SearchEngine {
             );
             bestScore = Math.max(bestScore, score);
             alpha = Math.max(alpha, score);
+            if (wldSearchActive && bestScore == Evaluator.WIN_SCORE) {
+                return bestScore;
+            }
             if (alpha >= beta) {
                 searchContext.betaCutoffs++;
                 return bestScore;
@@ -1367,7 +1564,7 @@ public final class SearchEngine {
             return bestScore;
         }
         if (passed) {
-            return evaluator.terminalScore(player, opponent);
+            return terminalScore(player, opponent);
         }
         countExactNode(searchContext);
         return -solve3(
@@ -1415,6 +1612,9 @@ public final class SearchEngine {
             );
             bestScore = Math.max(bestScore, score);
             alpha = Math.max(alpha, score);
+            if (wldSearchActive && bestScore == Evaluator.WIN_SCORE) {
+                return bestScore;
+            }
             if (alpha >= beta) {
                 searchContext.betaCutoffs++;
                 return bestScore;
@@ -1424,7 +1624,7 @@ public final class SearchEngine {
             return bestScore;
         }
         if (passed) {
-            return evaluator.terminalScore(player, opponent);
+            return terminalScore(player, opponent);
         }
         countExactNode(searchContext);
         return -solve2(
@@ -1452,10 +1652,10 @@ public final class SearchEngine {
         if (flips != 0L) {
             long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
             long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
-            return -evaluator.terminalScore(nextOpponent, nextPlayer);
+            return -terminalScore(nextOpponent, nextPlayer);
         }
         if (passed) {
-            return evaluator.terminalScore(player, opponent);
+            return terminalScore(player, opponent);
         }
         countExactNode(searchContext);
         return -solve1(
@@ -1499,7 +1699,7 @@ public final class SearchEngine {
         long legalMoves = BitBoard.legalMoves(player, opponent);
         if (legalMoves == 0L) {
             if (BitBoard.legalMoves(opponent, player) == 0L) {
-                return evaluator.terminalScore(player, opponent);
+                return terminalScore(player, opponent);
             }
             return -searchLeaf(
                 opponent,
@@ -1522,7 +1722,7 @@ public final class SearchEngine {
             long flips = BitBoard.flips(player, opponent, move);
             long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
             long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
-            return -evaluator.terminalScore(nextOpponent, nextPlayer);
+            return -terminalScore(nextOpponent, nextPlayer);
         }
 
         int bestScore = -INFINITY;
@@ -1603,6 +1803,25 @@ public final class SearchEngine {
         return (int) bounds;
     }
 
+    static int wldScoreForDifference(int difference) {
+        if (difference > 0) {
+            return Evaluator.WIN_SCORE;
+        }
+        if (difference < 0) {
+            return -Evaluator.WIN_SCORE;
+        }
+        return 0;
+    }
+
+    private int terminalScore(long player, long opponent) {
+        if (!wldSearchActive) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        return wldScoreForDifference(
+            BitBoard.count(player) - BitBoard.count(opponent)
+        );
+    }
+
     static boolean lmrBoundCanBeStored(
         boolean hasUnverifiedReduction,
         int bestScore,
@@ -1640,7 +1859,7 @@ public final class SearchEngine {
         long nextPlayer,
         long nextOpponent
     ) {
-        if (!lmrEnabled || !lmrEligible(
+        if (exactSearchActive || !lmrEnabled || !lmrEligible(
             depth,
             moveIndex,
             move,
@@ -1665,7 +1884,7 @@ public final class SearchEngine {
         int count = 0;
         long remaining = legalMoves;
         boolean endgameOrdering = endgameOrderingEnabled
-            && BitBoard.countEmpty(player, opponent) <= MAX_ENDGAME_THRESHOLD;
+            && BitBoard.countEmpty(player, opponent) <= MAX_WLD_THRESHOLD;
         long oddRegions = endgameOrdering
             ? EndgameRegionAnalyzer.oddRegionMask(~(player | opponent))
             : 0L;
@@ -1735,7 +1954,11 @@ public final class SearchEngine {
         if (table == null || !ttEligible(depth)) {
             return -1;
         }
-        long probe = table.probe(player, opponent);
+        long probe = table.probe(
+            player,
+            opponent,
+            transpositionMode()
+        );
         if (!TranspositionTable.probeFound(probe)) {
             return -1;
         }
@@ -1778,9 +2001,16 @@ public final class SearchEngine {
                 depth,
                 score,
                 bound,
-                bestSquare
+                bestSquare,
+                transpositionMode()
             );
         }
+    }
+
+    private byte transpositionMode() {
+        return wldSearchActive
+            ? TranspositionTable.WLD_MODE
+            : TranspositionTable.SCORE_MODE;
     }
 
     private void checkStop(boolean force, SearchContext searchContext) {

@@ -1,0 +1,3 @@
+mode,threads,empties,solved,searches,avgMillis,maxMillis,avgDepth,avgNodes,timedOut,illegalMoves,wldAttempts,wldSolutions,wldFallbacks,avgWldMillis,avgWldNodes,outcomeCompared,outcomeMismatches,scoreChecksum
+exact-score,4,12,12,12,5,16,12.0,31920,0,0,0,0,0,0,0,0,0,-7475847246607104593
+wld,4,12,12,12,1,4,12.0,2496,0,0,12,12,0,0,2037,12,0,-7406644704930485311

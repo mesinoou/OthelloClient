@@ -1,0 +1,11 @@
+evaluation match
+model=learned-table-v1 (scoreScale=6400, divisor=1, bound=75962, path=D:\�̓_���|�[�g\OthelloClient\data\evaluation-tables.bin)
+opponent=EDAX, edaxLevel=7
+pairs=1, games=2, openingPlies=8, openingSeed=20260803
+searchTimeMillis=10000, maxDepth=64, threads=4, ponderMillis=0, openingBook=off
+game=1/2 opening=1 learned=black result=LOSS margin=-20 discs=22-42 moves=60 elapsed=161.213s
+game=2/2 opening=1 learned=white result=WIN margin=+6 discs=29-35 moves=60 elapsed=160.074s
+summary
+games=2 wins=1 draws=0 losses=1 scoreRate=50.00% averageMargin=-7.00 elapsed=321.286s
+learned: moves=52 avgMove=6176.544ms avgDepth=13.06 nodes=680669763 nodesPerSecond=2119276 budgetStops=32 exactMoves=20 initialTtHits=48 wldAttempts=20 wldSolutions=20 wldNodes=14876828 wldSeconds=1.161
+edax: moves=52 avgMove=1.752ms

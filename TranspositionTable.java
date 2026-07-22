@@ -5,6 +5,8 @@ public final class TranspositionTable {
     public static final byte EXACT = 1;
     public static final byte LOWER_BOUND = 2;
     public static final byte UPPER_BOUND = 3;
+    public static final byte SCORE_MODE = 0;
+    public static final byte WLD_MODE = 1;
 
     private static final int LOCK_COUNT = 256;
     private static final long FOUND_MASK = Long.MIN_VALUE;
@@ -67,6 +69,17 @@ public final class TranspositionTable {
     }
 
     public long probe(long player, long opponent) {
+        return probe(player, opponent, SCORE_MODE);
+    }
+
+    public long probe(long player, long opponent, byte mode) {
+        // Complemented WLD boards occupy an impossible legal-position key space.
+        if (mode == WLD_MODE) {
+            player = ~player;
+            opponent = ~opponent;
+        } else if (mode != SCORE_MODE) {
+            throw new IllegalArgumentException("invalid TT mode");
+        }
         int index = index(player, opponent);
         synchronized (lock(index)) {
             if (occupied[index] == 0
@@ -111,6 +124,32 @@ public final class TranspositionTable {
         byte bound,
         int bestSquare
     ) {
+        store(
+            player,
+            opponent,
+            depth,
+            value,
+            bound,
+            bestSquare,
+            SCORE_MODE
+        );
+    }
+
+    public void store(
+        long player,
+        long opponent,
+        int depth,
+        int value,
+        byte bound,
+        int bestSquare,
+        byte mode
+    ) {
+        if (mode == WLD_MODE) {
+            player = ~player;
+            opponent = ~opponent;
+        } else if (mode != SCORE_MODE) {
+            throw new IllegalArgumentException("invalid TT mode");
+        }
         int index = index(player, opponent);
         synchronized (lock(index)) {
             boolean samePosition = occupied[index] != 0
