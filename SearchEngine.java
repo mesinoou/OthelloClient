@@ -2,12 +2,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -20,14 +22,33 @@ public final class SearchEngine {
     private static final int INFINITY = 1_000_000;
     private static final int STOP_CHECK_MASK = 1023;
     private static final int PARALLEL_MINIMUM_DEPTH = 3;
+    private static final int MINIMUM_TT_DEPTH = 2;
+    private static final int LMR_MINIMUM_DEPTH = 5;
+    private static final int LMR_MINIMUM_MOVE_INDEX = 4;
     private static final int ENDGAME_FALLBACK_DEPTH = 4;
+    private static final int MIN_STABILITY_EMPTIES = 5;
+    private static final int MAX_EDGE_STABLE_DISCS = 28;
     private static final int ODD_REGION_BONUS = 1;
+    private static final int NO_STABILITY_CUTOFF = Integer.MIN_VALUE;
+    private static final int NO_MPC_CUTOFF = Integer.MIN_VALUE;
+    private static final int MAX_EDGE_LOWER_SCORE =
+        Evaluator.terminalScoreForDifference(
+            2 * MAX_EDGE_STABLE_DISCS - 64
+        );
+    private static final int MIN_EDGE_UPPER_SCORE =
+        Evaluator.terminalScoreForDifference(
+            64 - 2 * MAX_EDGE_STABLE_DISCS
+        );
     private static final long CORNERS = 0x8100000000000081L;
 
-    private final Evaluator evaluator;
+    private final PositionEvaluator evaluator;
     private final TranspositionTable table;
     private final boolean endgameOrderingEnabled;
     private final int endgameThresholdOverride;
+    private final boolean lmrEnabled;
+    private final boolean exactLastNSolverEnabled;
+    private final boolean stabilityCutoffEnabled;
+    private final boolean multiProbCutEnabled;
     private final SearchContext context = new SearchContext();
     private final ThreadLocal<SearchContext> workerContexts =
         ThreadLocal.withInitial(SearchContext::new);
@@ -35,23 +56,26 @@ public final class SearchEngine {
     private final AtomicBoolean timedOut = new AtomicBoolean();
     private final CopyOnWriteArrayList<Future<?>> activeTasks =
         new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Thread> workerThreads =
+        new CopyOnWriteArrayList<>();
     private final ParallelMetrics parallelMetrics = new ParallelMetrics();
     private final Object poolLock = new Object();
 
     private ExecutorService workerPool;
     private int workerThreadCount;
     private long deadlineNanos;
+    private boolean exactSearchActive;
 
     public SearchEngine() {
         this(new Evaluator(), new TranspositionTable(1 << 18));
     }
 
-    SearchEngine(Evaluator evaluator, TranspositionTable table) {
+    SearchEngine(PositionEvaluator evaluator, TranspositionTable table) {
         this(evaluator, table, true);
     }
 
     SearchEngine(
-        Evaluator evaluator,
+        PositionEvaluator evaluator,
         TranspositionTable table,
         boolean endgameOrderingEnabled
     ) {
@@ -59,10 +83,86 @@ public final class SearchEngine {
     }
 
     SearchEngine(
-        Evaluator evaluator,
+        PositionEvaluator evaluator,
         TranspositionTable table,
         boolean endgameOrderingEnabled,
         int endgameThresholdOverride
+    ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled
+    ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled
+    ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean stabilityCutoffEnabled
+    ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            stabilityCutoffEnabled,
+            true
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean stabilityCutoffEnabled,
+        boolean multiProbCutEnabled
     ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
@@ -75,6 +175,15 @@ public final class SearchEngine {
             throw new IllegalArgumentException("invalid endgame threshold");
         }
         this.endgameThresholdOverride = endgameThresholdOverride;
+        this.lmrEnabled = lmrEnabled;
+        this.exactLastNSolverEnabled = exactLastNSolverEnabled;
+        this.stabilityCutoffEnabled = stabilityCutoffEnabled;
+        this.multiProbCutEnabled = multiProbCutEnabled
+            && MultiProbCut.supports(evaluator);
+    }
+
+    public String evaluatorDescription() {
+        return evaluator.description();
     }
 
     public synchronized SearchResult search(
@@ -99,6 +208,20 @@ public final class SearchEngine {
         cancelActiveTasks();
     }
 
+    boolean hasTransposition(BitBoardPosition position, int color) {
+        if (position == null) {
+            throw new NullPointerException("position");
+        }
+        if (table == null) {
+            return false;
+        }
+        long probe = table.probe(
+            position.player(color),
+            position.opponent(color)
+        );
+        return TranspositionTable.probeFound(probe);
+    }
+
     public void shutdown() {
         stop();
         synchronized (poolLock) {
@@ -106,8 +229,21 @@ public final class SearchEngine {
                 workerPool.shutdownNow();
                 workerPool = null;
                 workerThreadCount = 0;
+                workerThreads.clear();
             }
         }
+    }
+
+    void prestartWorkerThreads() {
+        synchronized (poolLock) {
+            if (workerPool instanceof ThreadPoolExecutor) {
+                ((ThreadPoolExecutor) workerPool).prestartAllCoreThreads();
+            }
+        }
+    }
+
+    Thread[] workerThreadsSnapshot() {
+        return workerThreads.toArray(new Thread[0]);
     }
 
     private SearchResult search(
@@ -117,6 +253,7 @@ public final class SearchEngine {
     ) {
         stopRequested.set(false);
         timedOut.set(false);
+        exactSearchActive = false;
         activeTasks.clear();
         context.reset();
         parallelMetrics.reset();
@@ -198,6 +335,7 @@ public final class SearchEngine {
             }
 
             if (endgameSearch) {
+                exactSearchActive = true;
                 if (rootPass) {
                     searchPassedRoot(player, opponent, emptyCount);
                 } else if (shouldSearchParallel(
@@ -229,6 +367,7 @@ public final class SearchEngine {
         } catch (SearchAbortedException ignored) {
             aborted = true;
         } finally {
+            exactSearchActive = false;
             cancelActiveTasks();
             activeTasks.clear();
         }
@@ -279,6 +418,8 @@ public final class SearchEngine {
                 + parallelMetrics.transpositionHits.get(),
             context.betaCutoffs + parallelMetrics.betaCutoffs.get(),
             context.pvsResearches + parallelMetrics.pvsResearches.get(),
+            context.lmrSearches + parallelMetrics.lmrSearches.get(),
+            context.lmrResearches + parallelMetrics.lmrResearches.get(),
             workerNodes,
             parallelMetrics.tasks.get(),
             searchTimedOut,
@@ -287,7 +428,15 @@ public final class SearchEngine {
             0,
             0,
             exactSolution,
-            endgameEmpties
+            endgameEmpties,
+            parallelMetrics.workerNodesSnapshot(),
+            context.stabilityChecks
+                + parallelMetrics.stabilityChecks.get(),
+            context.stabilityCuts + parallelMetrics.stabilityCuts.get(),
+            context.mpcAttempts + parallelMetrics.mpcAttempts.get(),
+            context.mpcHighCuts + parallelMetrics.mpcHighCuts.get(),
+            context.mpcLowCuts + parallelMetrics.mpcLowCuts.get(),
+            context.mpcProbeNodes + parallelMetrics.mpcProbeNodes.get()
         );
     }
 
@@ -309,7 +458,7 @@ public final class SearchEngine {
     ) {
         checkStop(true, context);
         context.nodes++;
-        int score = -pvs(
+        int score = -searchRootChild(
             opponent,
             player,
             depth,
@@ -339,7 +488,12 @@ public final class SearchEngine {
         checkStop(true, context);
         context.nodes++;
 
-        int tableBestSquare = tableBestSquare(player, opponent, context);
+        int tableBestSquare = tableBestSquare(
+            player,
+            opponent,
+            depth,
+            context
+        );
         long legalMoves = BitBoard.legalMoves(player, opponent);
         int moveCount = prepareMoves(
             player,
@@ -355,6 +509,7 @@ public final class SearchEngine {
         int beta = INFINITY;
         int bestScore = -INFINITY;
         int bestSquare = -1;
+        int firstMoveScore = -INFINITY;
 
         for (int index = 0; index < moveCount; index++) {
             checkStop(true, context);
@@ -365,7 +520,7 @@ public final class SearchEngine {
 
             int score;
             if (index == 0) {
-                score = -pvs(
+                score = -searchRootChild(
                     nextOpponent,
                     nextPlayer,
                     depth - 1,
@@ -374,24 +529,26 @@ public final class SearchEngine {
                     1,
                     context
                 );
+                firstMoveScore = score;
             } else {
-                score = -pvs(
+                int probeAlpha = lmrEnabled ? firstMoveScore : alpha;
+                score = -searchRootChild(
                     nextOpponent,
                     nextPlayer,
                     depth - 1,
-                    -alpha - 1,
-                    -alpha,
+                    -probeAlpha - 1,
+                    -probeAlpha,
                     1,
                     context
                 );
-                if (score > alpha && score < beta) {
+                if (score > probeAlpha && score < beta) {
                     context.pvsResearches++;
-                    score = -pvs(
+                    score = -searchRootChild(
                         nextOpponent,
                         nextPlayer,
                         depth - 1,
                         -beta,
-                        -alpha,
+                        -probeAlpha,
                         1,
                         context
                     );
@@ -425,7 +582,12 @@ public final class SearchEngine {
         checkStop(true, context);
         context.nodes++;
 
-        int tableBestSquare = tableBestSquare(player, opponent, context);
+        int tableBestSquare = tableBestSquare(
+            player,
+            opponent,
+            depth,
+            context
+        );
         long legalMoves = BitBoard.legalMoves(player, opponent);
         int moveCount = prepareMoves(
             player,
@@ -475,6 +637,7 @@ public final class SearchEngine {
                         move,
                         moveIndex,
                         depth,
+                        firstScore,
                         sharedBest,
                         completion
                     )
@@ -517,6 +680,7 @@ public final class SearchEngine {
         long move,
         int moveIndex,
         int depth,
+        int probeAlpha,
         AtomicLong sharedBest,
         WorkerCompletion completion
     ) {
@@ -528,26 +692,24 @@ public final class SearchEngine {
         boolean aborted = false;
         try {
             checkStop(true, workerContext);
-            int alpha = unpackBestScore(sharedBest.get());
             int score = searchRootMove(
                 player,
                 opponent,
                 move,
                 depth,
-                alpha,
-                alpha + 1,
+                probeAlpha,
+                probeAlpha + 1,
                 workerContext
             );
 
-            int currentAlpha = unpackBestScore(sharedBest.get());
-            if (score > currentAlpha) {
+            if (rootProbeFailedHigh(probeAlpha, score)) {
                 workerContext.pvsResearches++;
                 score = searchRootMove(
                     player,
                     opponent,
                     move,
                     depth,
-                    currentAlpha,
+                    probeAlpha,
                     INFINITY,
                     workerContext
                 );
@@ -564,6 +726,10 @@ public final class SearchEngine {
         return new RootMoveResult(aborted);
     }
 
+    static boolean rootProbeFailedHigh(int probeAlpha, int score) {
+        return score > probeAlpha;
+    }
+
     private int searchRootMove(
         long player,
         long opponent,
@@ -576,13 +742,47 @@ public final class SearchEngine {
         long flips = BitBoard.flips(player, opponent, move);
         long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
         long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
-        return -pvs(
+        return -searchRootChild(
             nextOpponent,
             nextPlayer,
             depth - 1,
             -beta,
             -alpha,
             1,
+            searchContext
+        );
+    }
+
+    private int searchRootChild(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        int ply,
+        SearchContext searchContext
+    ) {
+        if (depth >= 2
+            && depth <= 4
+            && exactSearchActive
+            && exactLastNSolverEnabled) {
+            countExactNode(searchContext);
+            return solveExactLastN(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
+        }
+        return pvs(
+            player,
+            opponent,
+            depth,
+            alpha,
+            beta,
+            ply,
             searchContext
         );
     }
@@ -622,11 +822,24 @@ public final class SearchEngine {
         if (ply >= SearchContext.MAX_PLY) {
             return evaluator.evaluate(player, opponent);
         }
+        if (specializedLeafDepth(depth)) {
+            return searchLeaf(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                ply,
+                searchContext,
+                false
+            );
+        }
 
         int originalAlpha = alpha;
         int originalBeta = beta;
+        boolean nullWindow = beta == alpha + 1;
         int tableBestSquare = -1;
-        if (table != null) {
+        if (table != null && ttEligible(depth)) {
             long probe = table.probe(player, opponent);
             if (TranspositionTable.probeFound(probe)) {
                 searchContext.transpositionHits++;
@@ -647,6 +860,38 @@ public final class SearchEngine {
                     }
                 }
             }
+        }
+
+        int empties = BitBoard.countEmpty(player, opponent);
+        if (stabilityCutoffEnabled && stabilityEligible(
+            exactSearchActive,
+            empties,
+            nullWindow,
+            alpha,
+            beta
+        )) {
+            int stabilityScore = stabilityCutoff(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
+            if (stabilityScore != NO_STABILITY_CUTOFF) {
+                return stabilityScore;
+            }
+        }
+
+        if (depth == 4 && exactSearchActive && exactLastNSolverEnabled) {
+            return solveExactLastN(
+                player,
+                opponent,
+                depth,
+                alpha,
+                beta,
+                searchContext
+            );
         }
 
         long legalMoves = BitBoard.legalMoves(player, opponent);
@@ -698,7 +943,22 @@ public final class SearchEngine {
             return value;
         }
 
-        if (BitBoard.countEmpty(player, opponent) == 1) {
+        int mpcScore = multiProbCut(
+            player,
+            opponent,
+            depth,
+            empties,
+            alpha,
+            beta,
+            nullWindow,
+            ply,
+            searchContext
+        );
+        if (mpcScore != NO_MPC_CUTOFF) {
+            return mpcScore;
+        }
+
+        if (empties == 1) {
             long move = legalMoves & -legalMoves;
             long flips = BitBoard.flips(player, opponent, move);
             long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
@@ -719,17 +979,24 @@ public final class SearchEngine {
             return score;
         }
 
+        int orderingTableBestSquare = lmrEnabled
+            && nullWindow
+            && depth >= LMR_MINIMUM_DEPTH
+            && empties > MAX_ENDGAME_THRESHOLD
+                ? -1
+                : tableBestSquare;
         int moveCount = prepareMoves(
             player,
             opponent,
             legalMoves,
             ply,
             -1,
-            tableBestSquare,
+            orderingTableBestSquare,
             searchContext
         );
         int bestScore = -INFINITY;
         int bestSquare = -1;
+        boolean hasUnverifiedReduction = false;
 
         for (int index = 0; index < moveCount; index++) {
             long move = searchContext.moves[ply][index];
@@ -749,15 +1016,51 @@ public final class SearchEngine {
                     searchContext
                 );
             } else {
-                score = -pvs(
-                    nextOpponent,
+                boolean reduce = shouldReduceLateMove(
+                    depth,
+                    index,
+                    move,
+                    empties,
+                    nullWindow,
                     nextPlayer,
-                    depth - 1,
-                    -alpha - 1,
-                    -alpha,
-                    ply + 1,
-                    searchContext
+                    nextOpponent
                 );
+                if (reduce) {
+                    searchContext.lmrSearches++;
+                    score = -pvs(
+                        nextOpponent,
+                        nextPlayer,
+                        depth - 2,
+                        -alpha - 1,
+                        -alpha,
+                        ply + 1,
+                        searchContext
+                    );
+                    if (score > alpha) {
+                        searchContext.lmrResearches++;
+                        score = -pvs(
+                            nextOpponent,
+                            nextPlayer,
+                            depth - 1,
+                            -alpha - 1,
+                            -alpha,
+                            ply + 1,
+                            searchContext
+                        );
+                    } else {
+                        hasUnverifiedReduction = true;
+                    }
+                } else {
+                    score = -pvs(
+                        nextOpponent,
+                        nextPlayer,
+                        depth - 1,
+                        -alpha - 1,
+                        -alpha,
+                        ply + 1,
+                        searchContext
+                    );
+                }
                 if (score > alpha && score < beta) {
                     searchContext.pvsResearches++;
                     score = -pvs(
@@ -785,16 +1088,569 @@ public final class SearchEngine {
             }
         }
 
-        storeBound(
+        if (lmrBoundCanBeStored(
+            hasUnverifiedReduction,
+            bestScore,
+            originalBeta
+        )) {
+            storeBound(
+                player,
+                opponent,
+                depth,
+                bestScore,
+                originalAlpha,
+                originalBeta,
+                bestSquare
+            );
+        }
+        return bestScore;
+    }
+
+    private int multiProbCut(
+        long player,
+        long opponent,
+        int depth,
+        int empties,
+        int alpha,
+        int beta,
+        boolean nullWindow,
+        int ply,
+        SearchContext searchContext
+    ) {
+        if (!multiProbCutEnabled
+            || searchContext.mpcProbeActive
+            || !nullWindow) {
+            return NO_MPC_CUTOFF;
+        }
+        MultiProbCut.Parameters parameters = MultiProbCut.parametersFor(
+            depth,
+            empties
+        );
+        if (parameters == null) {
+            return NO_MPC_CUTOFF;
+        }
+
+        searchContext.mpcAttempts++;
+        long nodesBefore = searchContext.nodes;
+        searchContext.mpcProbeActive = true;
+        try {
+            if (evaluator.evaluate(player, opponent) >= beta) {
+                int highThreshold = MultiProbCut.failHighThreshold(
+                    beta,
+                    parameters
+                );
+                int highScore = pvs(
+                    player,
+                    opponent,
+                    depth - 4,
+                    highThreshold - 1,
+                    highThreshold,
+                    ply,
+                    searchContext
+                );
+                if (highScore >= highThreshold) {
+                    searchContext.mpcHighCuts++;
+                    return beta;
+                }
+            } else {
+                int lowThreshold = MultiProbCut.failLowThreshold(
+                    alpha,
+                    parameters
+                );
+                int lowScore = pvs(
+                    player,
+                    opponent,
+                    depth - 4,
+                    lowThreshold,
+                    lowThreshold + 1,
+                    ply,
+                    searchContext
+                );
+                if (lowScore <= lowThreshold) {
+                    searchContext.mpcLowCuts++;
+                    return alpha;
+                }
+            }
+            return NO_MPC_CUTOFF;
+        } finally {
+            searchContext.mpcProbeActive = false;
+            searchContext.mpcProbeNodes += searchContext.nodes - nodesBefore;
+        }
+    }
+
+    private int stabilityCutoff(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        SearchContext searchContext
+    ) {
+        searchContext.stabilityChecks++;
+        long bounds = stabilityScoreBounds(player, opponent);
+        int lowerScore = stabilityLowerScore(bounds);
+        if (lowerScore >= beta) {
+            searchContext.stabilityCuts++;
+            store(
+                player,
+                opponent,
+                depth,
+                lowerScore,
+                TranspositionTable.LOWER_BOUND,
+                -1
+            );
+            return lowerScore;
+        }
+
+        int upperScore = stabilityUpperScore(bounds);
+        if (upperScore <= alpha) {
+            searchContext.stabilityCuts++;
+            store(
+                player,
+                opponent,
+                depth,
+                upperScore,
+                TranspositionTable.UPPER_BOUND,
+                -1
+            );
+            return upperScore;
+        }
+        return NO_STABILITY_CUTOFF;
+    }
+
+    private int solveExactLastN(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        SearchContext searchContext
+    ) {
+        long empty = ~(player | opponent);
+        if (depth == 4) {
+            return solve4(
+                player,
+                opponent,
+                empty,
+                alpha,
+                beta,
+                false,
+                searchContext
+            );
+        }
+        if (depth == 3) {
+            return solve3(
+                player,
+                opponent,
+                empty,
+                alpha,
+                beta,
+                false,
+                searchContext
+            );
+        }
+        return solve2(
             player,
             opponent,
-            depth,
-            bestScore,
-            originalAlpha,
-            originalBeta,
-            bestSquare
+            empty,
+            alpha,
+            beta,
+            false,
+            searchContext
         );
+    }
+
+    private int solve4(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        int bestScore = -INFINITY;
+        boolean hasLegalMove = false;
+        long oddMoves = EndgameRegionAnalyzer.oddRegionMask(empty) & empty;
+        long remaining = oddMoves != 0L ? oddMoves : empty;
+        long deferred = empty & ~remaining;
+
+        while (remaining != 0L || deferred != 0L) {
+            if (remaining == 0L) {
+                remaining = deferred;
+                deferred = 0L;
+            }
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            if (flips == 0L) {
+                continue;
+            }
+            hasLegalMove = true;
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            countExactNode(searchContext);
+            int score = -solve3(
+                nextOpponent,
+                nextPlayer,
+                empty ^ move,
+                -beta,
+                -alpha,
+                false,
+                searchContext
+            );
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                return bestScore;
+            }
+        }
+        if (hasLegalMove) {
+            return bestScore;
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve4(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private int solve3(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        int bestScore = -INFINITY;
+        boolean hasLegalMove = false;
+        long remaining = empty;
+        while (remaining != 0L) {
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            if (flips == 0L) {
+                continue;
+            }
+            hasLegalMove = true;
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            countExactNode(searchContext);
+            int score = -solve2(
+                nextOpponent,
+                nextPlayer,
+                empty ^ move,
+                -beta,
+                -alpha,
+                false,
+                searchContext
+            );
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                return bestScore;
+            }
+        }
+        if (hasLegalMove) {
+            return bestScore;
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve3(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private int solve2(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        int bestScore = -INFINITY;
+        boolean hasLegalMove = false;
+        long remaining = empty;
+        while (remaining != 0L) {
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            if (flips == 0L) {
+                continue;
+            }
+            hasLegalMove = true;
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            countExactNode(searchContext);
+            int score = -solve1(
+                nextOpponent,
+                nextPlayer,
+                empty ^ move,
+                -beta,
+                -alpha,
+                false,
+                searchContext
+            );
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                return bestScore;
+            }
+        }
+        if (hasLegalMove) {
+            return bestScore;
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve2(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private int solve1(
+        long player,
+        long opponent,
+        long empty,
+        int alpha,
+        int beta,
+        boolean passed,
+        SearchContext searchContext
+    ) {
+        long move = empty & -empty;
+        long flips = BitBoard.flips(player, opponent, move);
+        if (flips != 0L) {
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            return -evaluator.terminalScore(nextOpponent, nextPlayer);
+        }
+        if (passed) {
+            return evaluator.terminalScore(player, opponent);
+        }
+        countExactNode(searchContext);
+        return -solve1(
+            opponent,
+            player,
+            empty,
+            -beta,
+            -alpha,
+            true,
+            searchContext
+        );
+    }
+
+    private void countExactNode(SearchContext searchContext) {
+        searchContext.nodes++;
+        if ((searchContext.nodes & STOP_CHECK_MASK) == 0L) {
+            checkStop(false, searchContext);
+        }
+    }
+
+    private int searchLeaf(
+        long player,
+        long opponent,
+        int depth,
+        int alpha,
+        int beta,
+        int ply,
+        SearchContext searchContext,
+        boolean countNode
+    ) {
+        if (countNode) {
+            searchContext.nodes++;
+            if ((searchContext.nodes & STOP_CHECK_MASK) == 0L) {
+                checkStop(false, searchContext);
+            }
+        }
+        if (ply >= SearchContext.MAX_PLY) {
+            return evaluator.evaluate(player, opponent);
+        }
+
+        long legalMoves = BitBoard.legalMoves(player, opponent);
+        if (legalMoves == 0L) {
+            if (BitBoard.legalMoves(opponent, player) == 0L) {
+                return evaluator.terminalScore(player, opponent);
+            }
+            return -searchLeaf(
+                opponent,
+                player,
+                depth,
+                -beta,
+                -alpha,
+                ply + 1,
+                searchContext,
+                true
+            );
+        }
+
+        if (depth <= 0) {
+            return evaluator.evaluate(player, opponent);
+        }
+
+        if (BitBoard.countEmpty(player, opponent) == 1) {
+            long move = legalMoves & -legalMoves;
+            long flips = BitBoard.flips(player, opponent, move);
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            return -evaluator.terminalScore(nextOpponent, nextPlayer);
+        }
+
+        int bestScore = -INFINITY;
+        long remaining = legalMoves;
+        while (remaining != 0L) {
+            long move = remaining & -remaining;
+            remaining ^= move;
+            long flips = BitBoard.flips(player, opponent, move);
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            int score = -searchLeaf(
+                nextOpponent,
+                nextPlayer,
+                0,
+                -beta,
+                -alpha,
+                ply + 1,
+                searchContext,
+                true
+            );
+
+            bestScore = Math.max(bestScore, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) {
+                searchContext.betaCutoffs++;
+                break;
+            }
+        }
         return bestScore;
+    }
+
+    static boolean specializedLeafDepth(int depth) {
+        return depth <= 1;
+    }
+
+    static boolean exactLastNEligible(int depth, int empties) {
+        return depth >= 2 && depth <= 4 && depth == empties;
+    }
+
+    static boolean stabilityEligible(
+        boolean exactSearch,
+        int empties,
+        boolean nullWindow,
+        int alpha,
+        int beta
+    ) {
+        return exactSearch
+            && empties >= MIN_STABILITY_EMPTIES
+            && empties <= MAX_ENDGAME_THRESHOLD
+            && nullWindow
+            && (beta <= MAX_EDGE_LOWER_SCORE
+                || alpha >= MIN_EDGE_UPPER_SCORE);
+    }
+
+    static long stabilityScoreBounds(long player, long opponent) {
+        long occupied = player | opponent;
+        int stablePlayer = Long.bitCount(
+            Evaluator.stableEdgeDiscs(player, occupied)
+        );
+        int stableOpponent = Long.bitCount(
+            Evaluator.stableEdgeDiscs(opponent, occupied)
+        );
+        int lowerScore = Evaluator.terminalScoreForDifference(
+            2 * stablePlayer - 64
+        );
+        int upperScore = Evaluator.terminalScoreForDifference(
+            64 - 2 * stableOpponent
+        );
+        return ((long) lowerScore << 32)
+            | ((long) upperScore & 0xffff_ffffL);
+    }
+
+    static int stabilityLowerScore(long bounds) {
+        return (int) (bounds >> 32);
+    }
+
+    static int stabilityUpperScore(long bounds) {
+        return (int) bounds;
+    }
+
+    static boolean lmrBoundCanBeStored(
+        boolean hasUnverifiedReduction,
+        int bestScore,
+        int originalBeta
+    ) {
+        return !hasUnverifiedReduction || bestScore >= originalBeta;
+    }
+
+    static boolean ttEligible(int depth) {
+        return depth >= MINIMUM_TT_DEPTH;
+    }
+
+    static boolean lmrEligible(
+        int depth,
+        int moveIndex,
+        long move,
+        int empties,
+        boolean nullWindow,
+        boolean opponentHasMove
+    ) {
+        return depth >= LMR_MINIMUM_DEPTH
+            && moveIndex >= LMR_MINIMUM_MOVE_INDEX
+            && (move & CORNERS) == 0L
+            && empties > MAX_ENDGAME_THRESHOLD
+            && nullWindow
+            && opponentHasMove;
+    }
+
+    private boolean shouldReduceLateMove(
+        int depth,
+        int moveIndex,
+        long move,
+        int empties,
+        boolean nullWindow,
+        long nextPlayer,
+        long nextOpponent
+    ) {
+        if (!lmrEnabled || !lmrEligible(
+            depth,
+            moveIndex,
+            move,
+            empties,
+            nullWindow,
+            true
+        )) {
+            return false;
+        }
+        return BitBoard.legalMoves(nextOpponent, nextPlayer) != 0L;
     }
 
     private int prepareMoves(
@@ -873,9 +1729,10 @@ public final class SearchEngine {
     private int tableBestSquare(
         long player,
         long opponent,
+        int depth,
         SearchContext searchContext
     ) {
-        if (table == null) {
+        if (table == null || !ttEligible(depth)) {
             return -1;
         }
         long probe = table.probe(player, opponent);
@@ -914,7 +1771,7 @@ public final class SearchEngine {
         byte bound,
         int bestSquare
     ) {
-        if (table != null) {
+        if (table != null && ttEligible(depth)) {
             table.store(
                 player,
                 opponent,
@@ -947,6 +1804,7 @@ public final class SearchEngine {
             if (workerPool != null) {
                 workerPool.shutdownNow();
             }
+            workerThreads.clear();
             AtomicInteger workerId = new AtomicInteger();
             ThreadFactory factory = task -> {
                 Thread thread = new Thread(
@@ -954,6 +1812,7 @@ public final class SearchEngine {
                     "othello-search-worker-" + workerId.incrementAndGet()
                 );
                 thread.setDaemon(true);
+                workerThreads.add(thread);
                 return thread;
             };
             workerPool = Executors.newFixedThreadPool(
@@ -1096,14 +1955,33 @@ public final class SearchEngine {
         private final AtomicLong transpositionHits = new AtomicLong();
         private final AtomicLong betaCutoffs = new AtomicLong();
         private final AtomicLong pvsResearches = new AtomicLong();
+        private final AtomicLong lmrSearches = new AtomicLong();
+        private final AtomicLong lmrResearches = new AtomicLong();
+        private final AtomicLong stabilityChecks = new AtomicLong();
+        private final AtomicLong stabilityCuts = new AtomicLong();
+        private final AtomicLong mpcAttempts = new AtomicLong();
+        private final AtomicLong mpcHighCuts = new AtomicLong();
+        private final AtomicLong mpcLowCuts = new AtomicLong();
+        private final AtomicLong mpcProbeNodes = new AtomicLong();
         private final AtomicInteger tasks = new AtomicInteger();
+        private final ConcurrentHashMap<String, AtomicLong> workerNodes =
+            new ConcurrentHashMap<>();
 
         void reset() {
             nodes.set(0L);
             transpositionHits.set(0L);
             betaCutoffs.set(0L);
             pvsResearches.set(0L);
+            lmrSearches.set(0L);
+            lmrResearches.set(0L);
+            stabilityChecks.set(0L);
+            stabilityCuts.set(0L);
+            mpcAttempts.set(0L);
+            mpcHighCuts.set(0L);
+            mpcLowCuts.set(0L);
+            mpcProbeNodes.set(0L);
             tasks.set(0);
+            workerNodes.clear();
         }
 
         void add(SearchContext searchContext) {
@@ -1111,7 +1989,26 @@ public final class SearchEngine {
             transpositionHits.addAndGet(searchContext.transpositionHits);
             betaCutoffs.addAndGet(searchContext.betaCutoffs);
             pvsResearches.addAndGet(searchContext.pvsResearches);
+            lmrSearches.addAndGet(searchContext.lmrSearches);
+            lmrResearches.addAndGet(searchContext.lmrResearches);
+            stabilityChecks.addAndGet(searchContext.stabilityChecks);
+            stabilityCuts.addAndGet(searchContext.stabilityCuts);
+            mpcAttempts.addAndGet(searchContext.mpcAttempts);
+            mpcHighCuts.addAndGet(searchContext.mpcHighCuts);
+            mpcLowCuts.addAndGet(searchContext.mpcLowCuts);
+            mpcProbeNodes.addAndGet(searchContext.mpcProbeNodes);
             tasks.incrementAndGet();
+            workerNodes.computeIfAbsent(
+                Thread.currentThread().getName(),
+                ignored -> new AtomicLong()
+            ).addAndGet(searchContext.nodes);
+        }
+
+        long[] workerNodesSnapshot() {
+            return workerNodes.entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey())
+                .mapToLong(entry -> entry.getValue().get())
+                .toArray();
         }
     }
 

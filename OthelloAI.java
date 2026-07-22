@@ -1,10 +1,27 @@
+import java.io.IOException;
+import java.nio.file.Path;
+
 public final class OthelloAI {
 
     private final SearchEngine searchEngine;
     private final OpeningBook openingBook;
 
     public OthelloAI() {
-        this(OpeningBook.loadDefault(), new SearchEngine());
+        this(LearnedEvaluator.loadDefault(), 1 << 18);
+    }
+
+    public OthelloAI(Path evaluationModel) {
+        this(loadRequiredEvaluator(evaluationModel), 1 << 18);
+    }
+
+    private OthelloAI(PositionEvaluator evaluator, int ttEntries) {
+        this(
+            OpeningBook.loadDefault(),
+            new SearchEngine(
+                evaluator,
+                new TranspositionTable(ttEntries)
+            )
+        );
     }
 
     OthelloAI(OpeningBook openingBook, SearchEngine searchEngine) {
@@ -44,6 +61,18 @@ public final class OthelloAI {
         return searchEngine.search(position, color, limits);
     }
 
+    public SearchResult ponder(
+        BitBoardPosition position,
+        int color,
+        SearchLimits limits
+    ) {
+        return searchEngine.search(position, color, limits);
+    }
+
+    boolean hasTransposition(BitBoardPosition position, int color) {
+        return searchEngine.hasTransposition(position, color);
+    }
+
     public int openingBookSize() {
         return openingBook.size();
     }
@@ -56,11 +85,39 @@ public final class OthelloAI {
         return openingBook.maximumPly();
     }
 
+    public String evaluatorDescription() {
+        return searchEngine.evaluatorDescription();
+    }
+
     public void stop() {
         searchEngine.stop();
     }
 
     public void shutdown() {
         searchEngine.shutdown();
+    }
+
+    static OthelloAI create(PositionEvaluator evaluator, int ttEntries) {
+        if (evaluator == null) {
+            throw new NullPointerException("evaluator");
+        }
+        return new OthelloAI(evaluator, ttEntries);
+    }
+
+    static PositionEvaluator loadEvaluator(Path path) {
+        return path == null
+            ? LearnedEvaluator.loadDefault()
+            : loadRequiredEvaluator(path);
+    }
+
+    private static PositionEvaluator loadRequiredEvaluator(Path path) {
+        try {
+            return LearnedEvaluator.load(path);
+        } catch (IOException error) {
+            throw new IllegalArgumentException(
+                "学習済み評価モデルを読み込めません: " + error.getMessage(),
+                error
+            );
+        }
     }
 }

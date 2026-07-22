@@ -13,6 +13,15 @@ score_*.txt
 # Download and import work areas
 .edax-package.zip
 .wthor/
+.training/
+
+# Locally deployed learned evaluator artifacts
+data/evaluation-tables.bin
+data/evaluation-tables-*.metadata.json
+
+# Python training caches
+__pycache__/
+*.py[cod]
 
 # Local tooling and IDE state
 .agents/

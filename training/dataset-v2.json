@@ -1,0 +1,39 @@
+{
+  "name": "combined-evaluation-v2",
+  "sources": {
+    "nyanyan_self_play": {
+      "commit": "ca3dbb5bd39825ea8f6c9526243e548239066873",
+      "games": 20000
+    },
+    "wthor_opening_book": {
+      "years": "2001-2015, 2024, 2025",
+      "games": 58252,
+      "archives_sha256": {
+        "WTH_2001-2015.ZIP": "6ad6c237394225d83b205fd3edd8062f4a93bbc6527d3271f784f0a8b0603f91",
+        "WTH_2024.ZIP": "a6a6ac2313adbf0cee4d7e2552d2b34469f3cb394c28638d5f643f7098991ea8",
+        "WTH_2025.ZIP": "8d9ce0b473d14b5508b3dea72851bbc973bce906aff3bb29f611be3026c88315"
+      }
+    }
+  },
+  "sampling": {
+    "start_ply": 8,
+    "end_ply": 52,
+    "stride": 1,
+    "split_seed": 20260720
+  },
+  "positions": {
+    "train": 2816098,
+    "validation": 197683,
+    "test": 201143
+  },
+  "phase_counts": {
+    "train": [1377282, 625977, 625487, 187352],
+    "validation": [65520, 56665, 58069, 17429],
+    "test": [66230, 57775, 59326, 17812]
+  },
+  "sha256": {
+    "train.npz": "447be4693fc8c88c2cd8b6c429b9e4177e812f4456ef8ffc033dbd29a556820b",
+    "validation.npz": "57267f60afb64eccc6bd279497751bbadde9dd6b71e246ce232ce9acf2c3ec2b",
+    "test.npz": "2190464cf10b89635503eb159432a90c16bb7e99d4f27d518df9de2f698d4a08"
+  }
+}

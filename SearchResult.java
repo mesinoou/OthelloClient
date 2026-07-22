@@ -1,3 +1,5 @@
+import java.util.Arrays;
+
 public final class SearchResult {
 
     private final int bestSquare;
@@ -8,8 +10,17 @@ public final class SearchResult {
     private final long transpositionHits;
     private final long betaCutoffs;
     private final long pvsResearches;
+    private final long lmrSearches;
+    private final long lmrResearches;
+    private final long stabilityChecks;
+    private final long stabilityCuts;
+    private final long mpcAttempts;
+    private final long mpcHighCuts;
+    private final long mpcLowCuts;
+    private final long mpcProbeNodes;
     private final long parallelNodes;
     private final int parallelTasks;
+    private final long[] parallelWorkerNodes;
     private final boolean timedOut;
     private final boolean stopped;
     private final boolean openingBookMove;
@@ -142,6 +153,202 @@ public final class SearchResult {
         boolean exactSolution,
         int endgameEmpties
     ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            new long[0]
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes
+    ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            0L,
+            0L,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes
+    ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            lmrSearches,
+            lmrResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes,
+            0L,
+            0L
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes,
+        long stabilityChecks,
+        long stabilityCuts
+    ) {
+        this(
+            bestSquare,
+            score,
+            completedDepth,
+            nodes,
+            elapsedNanos,
+            transpositionHits,
+            betaCutoffs,
+            pvsResearches,
+            lmrSearches,
+            lmrResearches,
+            parallelNodes,
+            parallelTasks,
+            timedOut,
+            stopped,
+            openingBookMove,
+            openingBookGames,
+            openingBookWinRatePermille,
+            exactSolution,
+            endgameEmpties,
+            parallelWorkerNodes,
+            stabilityChecks,
+            stabilityCuts,
+            0L,
+            0L,
+            0L,
+            0L
+        );
+    }
+
+    public SearchResult(
+        int bestSquare,
+        int score,
+        int completedDepth,
+        long nodes,
+        long elapsedNanos,
+        long transpositionHits,
+        long betaCutoffs,
+        long pvsResearches,
+        long lmrSearches,
+        long lmrResearches,
+        long parallelNodes,
+        int parallelTasks,
+        boolean timedOut,
+        boolean stopped,
+        boolean openingBookMove,
+        int openingBookGames,
+        int openingBookWinRatePermille,
+        boolean exactSolution,
+        int endgameEmpties,
+        long[] parallelWorkerNodes,
+        long stabilityChecks,
+        long stabilityCuts,
+        long mpcAttempts,
+        long mpcHighCuts,
+        long mpcLowCuts,
+        long mpcProbeNodes
+    ) {
         this.bestSquare = bestSquare;
         this.score = score;
         this.completedDepth = completedDepth;
@@ -150,8 +357,19 @@ public final class SearchResult {
         this.transpositionHits = transpositionHits;
         this.betaCutoffs = betaCutoffs;
         this.pvsResearches = pvsResearches;
+        this.lmrSearches = lmrSearches;
+        this.lmrResearches = lmrResearches;
+        this.stabilityChecks = stabilityChecks;
+        this.stabilityCuts = stabilityCuts;
+        this.mpcAttempts = mpcAttempts;
+        this.mpcHighCuts = mpcHighCuts;
+        this.mpcLowCuts = mpcLowCuts;
+        this.mpcProbeNodes = mpcProbeNodes;
         this.parallelNodes = parallelNodes;
         this.parallelTasks = parallelTasks;
+        this.parallelWorkerNodes = parallelWorkerNodes == null
+            ? new long[0]
+            : Arrays.copyOf(parallelWorkerNodes, parallelWorkerNodes.length);
         this.timedOut = timedOut;
         this.stopped = stopped;
         this.openingBookMove = openingBookMove;
@@ -193,12 +411,48 @@ public final class SearchResult {
         return pvsResearches;
     }
 
+    public long lmrSearches() {
+        return lmrSearches;
+    }
+
+    public long lmrResearches() {
+        return lmrResearches;
+    }
+
+    public long stabilityChecks() {
+        return stabilityChecks;
+    }
+
+    public long stabilityCuts() {
+        return stabilityCuts;
+    }
+
+    public long mpcAttempts() {
+        return mpcAttempts;
+    }
+
+    public long mpcHighCuts() {
+        return mpcHighCuts;
+    }
+
+    public long mpcLowCuts() {
+        return mpcLowCuts;
+    }
+
+    public long mpcProbeNodes() {
+        return mpcProbeNodes;
+    }
+
     public long parallelNodes() {
         return parallelNodes;
     }
 
     public int parallelTasks() {
         return parallelTasks;
+    }
+
+    public long[] parallelWorkerNodes() {
+        return Arrays.copyOf(parallelWorkerNodes, parallelWorkerNodes.length);
     }
 
     public boolean timedOut() {

@@ -1,0 +1,2 @@
+handcrafted: 190.5 ns/eval, 5248695 eval/s, checksum=-42420957
+learned: 426.6 ns/eval, 2344314 eval/s, checksum=1090420038

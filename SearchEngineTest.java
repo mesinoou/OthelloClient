@@ -10,7 +10,18 @@ public final class SearchEngineTest {
     public static void main(String[] args) throws Exception {
         testAgainstReferenceNegamax();
         testEndgameThresholdSelection();
+        testTranspositionTableDepthGate();
+        testSpecializedLeafSearch();
+        testExactLastNSolverEligibility();
+        testExactLastNSolverMatchesGeneric();
+        testExactLastNSolverEdgeCases();
+        testStabilityBounds();
+        testStabilityCutoffMatchesBaseline();
         testTranspositionTableConsistency();
+        testRootProbeResearchDecision();
+        testLateMoveReductionEligibility();
+        testLateMoveReductionActivation();
+        testMultiProbCutCalibration();
         testParallelMatchesSequential();
         testExactEndgame();
         testExactEndgameAtThreshold();
@@ -60,6 +71,256 @@ public final class SearchEngineTest {
         assertEquals(18, SearchEngine.endgameThresholdFor(20_000L), "20s threshold");
     }
 
+    private static void testExactLastNSolverEligibility() {
+        if (!SearchEngine.exactLastNEligible(2, 2)
+            || !SearchEngine.exactLastNEligible(3, 3)
+            || !SearchEngine.exactLastNEligible(4, 4)) {
+            throw new AssertionError("exact last-N eligibility was rejected");
+        }
+        if (SearchEngine.exactLastNEligible(1, 1)
+            || SearchEngine.exactLastNEligible(4, 3)
+            || SearchEngine.exactLastNEligible(5, 5)) {
+            throw new AssertionError("invalid exact last-N eligibility");
+        }
+    }
+
+    private static void testExactLastNSolverMatchesGeneric() {
+        SearchEngine specialized = exactSolverEngine(true);
+        SearchEngine generic = exactSolverEngine(false);
+        assertExactSearchMatches(
+            new BitBoardPosition(-1L, 0L),
+            1,
+            specialized,
+            generic,
+            "full board"
+        );
+        for (int empties = 1; empties <= 8; empties++) {
+            for (int seed = 1; seed <= 16; seed++) {
+                PositionToMove sample = createEndgame(empties, seed);
+                assertExactSearchMatches(
+                    sample.position,
+                    sample.color,
+                    specialized,
+                    generic,
+                    empties + " empties seed " + seed
+                );
+            }
+        }
+        PositionToMove threshold = createEndgame(
+            SearchEngine.MIN_ENDGAME_THRESHOLD
+        );
+        assertExactSearchMatches(
+            threshold.position,
+            threshold.color,
+            specialized,
+            generic,
+            "existing 12-empty endgame"
+        );
+    }
+
+    private static void testExactLastNSolverEdgeCases() {
+        SearchEngine specialized = exactSolverEngine(true);
+        SearchEngine generic = exactSolverEngine(false);
+
+        long oneEmpty = 1L << 2;
+        long passOpponent = 1L;
+        long passPlayer = ~(oneEmpty | passOpponent);
+        if (BitBoard.legalMoves(passPlayer, passOpponent) != 0L
+            || BitBoard.legalMoves(passOpponent, passPlayer) == 0L) {
+            throw new AssertionError("one-empty pass fixture is invalid");
+        }
+        assertExactSearchMatches(
+            new BitBoardPosition(passPlayer, passOpponent),
+            1,
+            specialized,
+            generic,
+            "one-empty pass"
+        );
+
+        long terminalEmpty = 1L;
+        long terminalPlayer = ~terminalEmpty;
+        if (BitBoard.legalMoves(terminalPlayer, 0L) != 0L
+            || BitBoard.legalMoves(0L, terminalPlayer) != 0L) {
+            throw new AssertionError("unplayed terminal fixture is invalid");
+        }
+        assertExactSearchMatches(
+            new BitBoardPosition(terminalPlayer, 0L),
+            1,
+            specialized,
+            generic,
+            "one-empty terminal"
+        );
+
+        long twoEmpty = 3L;
+        long consecutivePassPlayer = ~twoEmpty;
+        assertExactSearchMatches(
+            new BitBoardPosition(consecutivePassPlayer, 0L),
+            1,
+            specialized,
+            generic,
+            "two-empty consecutive pass"
+        );
+
+        long wipeoutEmpty = 1L << 2;
+        long wipeoutOpponent = 1L << 1;
+        long wipeoutPlayer = ~(wipeoutEmpty | wipeoutOpponent);
+        long wipeoutFlips = BitBoard.flips(
+            wipeoutPlayer,
+            wipeoutOpponent,
+            wipeoutEmpty
+        );
+        if (wipeoutFlips == 0L || BitBoard.applyOpponentBoard(
+            wipeoutOpponent,
+            wipeoutFlips
+        ) != 0L) {
+            throw new AssertionError("wipeout fixture is invalid");
+        }
+        assertExactSearchMatches(
+            new BitBoardPosition(wipeoutPlayer, wipeoutOpponent),
+            1,
+            specialized,
+            generic,
+            "wipeout"
+        );
+    }
+
+    private static SearchEngine exactSolverEngine(boolean enabled) {
+        return new SearchEngine(
+            EVALUATOR,
+            null,
+            true,
+            SearchEngine.MAX_ENDGAME_THRESHOLD,
+            true,
+            enabled
+        );
+    }
+
+    private static void testStabilityBounds() {
+        if (SearchEngine.stabilityEligible(true, 4, true, 100_008, 100_009)
+            || SearchEngine.stabilityEligible(
+                true,
+                19,
+                true,
+                100_008,
+                100_009
+            )
+            || SearchEngine.stabilityEligible(
+                true,
+                12,
+                false,
+                100_008,
+                100_009
+            )
+            || SearchEngine.stabilityEligible(true, 12, true, 0, 1)
+            || !SearchEngine.stabilityEligible(
+                true,
+                12,
+                true,
+                100_008,
+                100_009
+            )
+            || !SearchEngine.stabilityEligible(
+                true,
+                12,
+                true,
+                -100_010,
+                -100_009
+            )) {
+            throw new AssertionError("stability cutoff eligibility is invalid");
+        }
+
+        long player = 0x0000_0000_0000_00ffL;
+        long opponent = 0xff00_0000_0000_0000L;
+        long bounds = SearchEngine.stabilityScoreBounds(player, opponent);
+        assertEquals(
+            Evaluator.terminalScoreForDifference(-48),
+            SearchEngine.stabilityLowerScore(bounds),
+            "stability lower score"
+        );
+        assertEquals(
+            Evaluator.terminalScoreForDifference(48),
+            SearchEngine.stabilityUpperScore(bounds),
+            "stability upper score"
+        );
+        long swapped = SearchEngine.stabilityScoreBounds(opponent, player);
+        assertEquals(
+            SearchEngine.stabilityLowerScore(bounds),
+            -SearchEngine.stabilityUpperScore(swapped),
+            "stability bound antisymmetry"
+        );
+    }
+
+    private static void testStabilityCutoffMatchesBaseline() {
+        SearchEngine baseline = stabilityEngine(false);
+        SearchEngine candidate = stabilityEngine(true);
+        for (int empties = 5; empties <= 9; empties++) {
+            for (int seed = 1; seed <= 4; seed++) {
+                PositionToMove sample = createEndgame(empties, seed);
+                SearchLimits limits = new SearchLimits(60_000L, empties, 1);
+                SearchResult expected = baseline.search(
+                    sample.position,
+                    sample.color,
+                    limits
+                );
+                SearchResult actual = candidate.search(
+                    sample.position,
+                    sample.color,
+                    limits
+                );
+                String label = "stability " + empties + " empties seed " + seed;
+                assertEquals(expected.score(), actual.score(), label + " score");
+
+                long bounds = SearchEngine.stabilityScoreBounds(
+                    sample.position.player(sample.color),
+                    sample.position.opponent(sample.color)
+                );
+                int lower = SearchEngine.stabilityLowerScore(bounds);
+                int upper = SearchEngine.stabilityUpperScore(bounds);
+                if (actual.score() < lower || actual.score() > upper) {
+                    throw new AssertionError(label + " escaped stability bounds");
+                }
+            }
+        }
+    }
+
+    private static SearchEngine stabilityEngine(boolean enabled) {
+        return new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 16),
+            true,
+            SearchEngine.MAX_ENDGAME_THRESHOLD,
+            true,
+            true,
+            enabled
+        );
+    }
+
+    private static void assertExactSearchMatches(
+        BitBoardPosition position,
+        int color,
+        SearchEngine specialized,
+        SearchEngine generic,
+        String message
+    ) {
+        int empties = position.emptyCount();
+        SearchLimits limits = new SearchLimits(
+            60_000L,
+            Math.max(1, empties),
+            1
+        );
+        SearchResult expected = generic.search(position, color, limits);
+        SearchResult actual = specialized.search(position, color, limits);
+        assertEquals(expected.score(), actual.score(), message + " score");
+        assertEquals(
+            expected.bestSquare(),
+            actual.bestSquare(),
+            message + " best square"
+        );
+        if (!expected.exactSolution() || !actual.exactSolution()) {
+            throw new AssertionError(message + " was not solved exactly");
+        }
+    }
+
     private static void testTranspositionTableConsistency() {
         BitBoardPosition position = BitBoardPosition.initial();
         SearchLimits limits = new SearchLimits(10_000L, 5, 1);
@@ -82,6 +343,58 @@ public final class SearchEngineTest {
         );
         if (cached.transpositionHits() == 0L) {
             throw new AssertionError("置換表が一度も参照されていません。");
+        }
+    }
+
+    private static void testTranspositionTableDepthGate() {
+        if (SearchEngine.ttEligible(0) || SearchEngine.ttEligible(1)) {
+            throw new AssertionError("浅いnodeでTTが有効です。");
+        }
+        if (!SearchEngine.ttEligible(2)) {
+            throw new AssertionError("depth 2でTTが無効です。");
+        }
+    }
+
+    private static void testSpecializedLeafSearch() {
+        if (!SearchEngine.specializedLeafDepth(0)
+            || !SearchEngine.specializedLeafDepth(1)
+            || SearchEngine.specializedLeafDepth(2)) {
+            throw new AssertionError("leaf探索のdepth境界が不正です。");
+        }
+
+        PositionToMove[] positions = {
+            new PositionToMove(BitBoardPosition.initial(), 1),
+            createMidgame(7),
+            createMidgame(19)
+        };
+        for (int index = 0; index < positions.length; index++) {
+            PositionToMove sample = positions[index];
+            SearchEngine engine = new SearchEngine(
+                EVALUATOR,
+                new TranspositionTable(1 << 14)
+            );
+            SearchResult result = engine.search(
+                sample.position,
+                sample.color,
+                new SearchLimits(10_000L, 1, 1)
+            );
+            int expected = referenceNegamax(
+                sample.position.player(sample.color),
+                sample.position.opponent(sample.color),
+                1
+            );
+            assertEquals(expected, result.score(), "leaf score " + index);
+            assertEquals(
+                expected,
+                referenceMoveScore(
+                    sample.position,
+                    sample.color,
+                    result.bestSquare(),
+                    1
+                ),
+                "leaf best move " + index
+            );
+            engine.shutdown();
         }
     }
 
@@ -139,8 +452,138 @@ public final class SearchEngineTest {
                     "並列探索ワーカーが使用されていません: sample=" + index
                 );
             }
+            long measuredWorkerNodes = 0L;
+            for (long workerNodes : parallel.parallelWorkerNodes()) {
+                measuredWorkerNodes += workerNodes;
+            }
+            if (measuredWorkerNodes != parallel.parallelNodes()) {
+                throw new AssertionError(
+                    "ワーカー別ノード数の合計が一致しません: sample="
+                        + index
+                );
+            }
             sequentialEngine.shutdown();
             parallelEngine.shutdown();
+        }
+    }
+
+    private static void testRootProbeResearchDecision() {
+        if (!SearchEngine.rootProbeFailedHigh(100, 101)) {
+            throw new AssertionError(
+                "探索に使用したalphaを超えた手が再探索されません。"
+            );
+        }
+        if (SearchEngine.rootProbeFailedHigh(100, 100)) {
+            throw new AssertionError(
+                "fail-highしていない手が再探索されます。"
+            );
+        }
+    }
+
+    private static void testLateMoveReductionEligibility() {
+        long ordinaryMove = 1L << 20;
+        if (!SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, true, true)) {
+            throw new AssertionError("LMR対象手を除外しています。");
+        }
+        if (SearchEngine.lmrEligible(4, 4, ordinaryMove, 19, true, true)) {
+            throw new AssertionError("浅い探索でLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 3, ordinaryMove, 19, true, true)) {
+            throw new AssertionError("上位手へLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, 1L, 19, true, true)) {
+            throw new AssertionError("隅へLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 18, true, true)) {
+            throw new AssertionError("終盤探索でLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, true, false)) {
+            throw new AssertionError("パスを発生させる手へLMRを適用しています。");
+        }
+        if (SearchEngine.lmrEligible(5, 4, ordinaryMove, 19, false, true)) {
+            throw new AssertionError("PVノードでLMRを適用しています。");
+        }
+        if (SearchEngine.lmrBoundCanBeStored(true, 99, 100)) {
+            throw new AssertionError("未検証LMRのUPPER boundを保存しています。");
+        }
+        if (!SearchEngine.lmrBoundCanBeStored(true, 100, 100)) {
+            throw new AssertionError("LMRのLOWER boundを破棄しています。");
+        }
+        if (!SearchEngine.lmrBoundCanBeStored(false, 99, 100)) {
+            throw new AssertionError("全深度確認済みのboundを破棄しています。");
+        }
+    }
+
+    private static void testLateMoveReductionActivation() {
+        PositionToMove sample = createMidgame(18);
+        SearchLimits sequentialLimits = new SearchLimits(10_000L, 7, 1);
+        SearchEngine firstEngine = new SearchEngine();
+        SearchEngine secondEngine = new SearchEngine();
+        SearchResult first = firstEngine.search(
+            sample.position,
+            sample.color,
+            sequentialLimits
+        );
+        SearchResult second = secondEngine.search(
+            sample.position,
+            sample.color,
+            sequentialLimits
+        );
+
+        assertEquals(first.score(), second.score(), "LMR repeat score");
+        assertEquals(
+            first.bestSquare(),
+            second.bestSquare(),
+            "LMR repeat best square"
+        );
+        if (first.lmrSearches() == 0L) {
+            throw new AssertionError("LMR探索が一度も実行されていません。");
+        }
+        if (first.lmrResearches() > first.lmrSearches()) {
+            throw new AssertionError("LMR再探索回数が探索回数を超えています。");
+        }
+
+        SearchEngine parallelEngine = new SearchEngine();
+        SearchResult parallel = parallelEngine.search(
+            sample.position,
+            sample.color,
+            new SearchLimits(10_000L, 7, 4)
+        );
+        assertEquals(first.score(), parallel.score(), "LMR parallel score");
+        assertEquals(
+            first.bestSquare(),
+            parallel.bestSquare(),
+            "LMR parallel best square"
+        );
+        if (parallel.lmrSearches() == 0L) {
+            throw new AssertionError("並列LMR探索が実行されていません。");
+        }
+
+        firstEngine.shutdown();
+        secondEngine.shutdown();
+        parallelEngine.shutdown();
+    }
+
+    private static void testMultiProbCutCalibration() {
+        MultiProbCut.Parameters phaseZero = MultiProbCut.parametersFor(8, 31);
+        MultiProbCut.Parameters phaseZeroDeep = MultiProbCut.parametersFor(
+            10,
+            31
+        );
+        MultiProbCut.Parameters phaseOne = MultiProbCut.parametersFor(8, 30);
+        if (phaseZero == null || phaseZeroDeep == null || phaseOne == null) {
+            throw new AssertionError("MPC calibration group is missing");
+        }
+        if (MultiProbCut.parametersFor(6, 31) != null
+            || MultiProbCut.parametersFor(6, 30) != null
+            || MultiProbCut.parametersFor(8, 20) != null
+            || MultiProbCut.parametersFor(8, 18) != null) {
+            throw new AssertionError("uncalibrated MPC group is enabled");
+        }
+        int high = MultiProbCut.failHighThreshold(101, phaseZero);
+        int low = MultiProbCut.failLowThreshold(100, phaseZero);
+        if (high <= 101 || low >= 100 || high <= low) {
+            throw new AssertionError("MPC threshold margins are invalid");
         }
     }
 
@@ -473,6 +916,46 @@ public final class SearchEngineTest {
                 ? new BitBoardPosition(nextPlayer, nextOpponent)
                 : new BitBoardPosition(nextOpponent, nextPlayer);
             color = -color;
+        }
+        return new PositionToMove(position, color);
+    }
+
+    private static PositionToMove createEndgame(
+        int maximumEmpties,
+        int seed
+    ) {
+        BitBoardPosition position = BitBoardPosition.initial();
+        int color = 1;
+        int played = 0;
+        while (position.emptyCount() > maximumEmpties) {
+            long player = position.player(color);
+            long opponent = position.opponent(color);
+            long moves = BitBoard.legalMoves(player, opponent);
+            if (moves == 0L) {
+                if (BitBoard.legalMoves(opponent, player) == 0L) {
+                    break;
+                }
+                color = -color;
+                continue;
+            }
+
+            int choice = Math.floorMod(
+                played * 11 + seed * 7,
+                BitBoard.count(moves)
+            );
+            long move = moves;
+            while (choice-- > 0) {
+                move &= move - 1L;
+            }
+            move &= -move;
+            long flips = BitBoard.flips(player, opponent, move);
+            long nextPlayer = BitBoard.applyPlayerBoard(player, move, flips);
+            long nextOpponent = BitBoard.applyOpponentBoard(opponent, flips);
+            position = color == 1
+                ? new BitBoardPosition(nextPlayer, nextOpponent)
+                : new BitBoardPosition(nextOpponent, nextPlayer);
+            color = -color;
+            played++;
         }
         return new PositionToMove(position, color);
     }

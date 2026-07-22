@@ -1,0 +1,26 @@
+{
+  "name": "nyanyan-self-play-v1",
+  "source_commit": "ca3dbb5bd39825ea8f6c9526243e548239066873",
+  "source_games": 20000,
+  "sampling": {
+    "start_ply": 8,
+    "end_ply": 52,
+    "stride": 1,
+    "split_seed": 20260720
+  },
+  "positions": {
+    "train": 719010,
+    "validation": 3737,
+    "test": 3230
+  },
+  "phase_counts": {
+    "train": [351516, 159780, 159780, 47934],
+    "validation": [1176, 1079, 1140, 342],
+    "test": [1043, 903, 987, 297]
+  },
+  "sha256": {
+    "train.npz": "0e05b3295979dab6a6399d2b79b2617f89d3a451de153c33085c206cc05c4d40",
+    "validation.npz": "cfd400799cc9082cd3a299698b6cd5d998130eaf21ac83a89dcc536ae6b95f64",
+    "test.npz": "ac258b3fddbd5bad0cc6ab663ac7a4184918e0d5aa17cc280d0ceacef7f4676e"
+  }
+}
