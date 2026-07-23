@@ -1,0 +1,82 @@
+{
+  "experiment": "EVAL-016",
+  "status": "phase-3-disabled-candidate-advanced-to-l11",
+  "standard_model_sha256": "6e118c928729e003e89742d3b57fe6ed35fa9233a38dbe8af852041ebee39457",
+  "source_candidate": {
+    "name": "EVAL-010 iteration 2",
+    "sha256": "cbee474cbee0592e627ef631bb0535f39545b0d1c12e8147613cdcd8174ef805"
+  },
+  "advanced_candidate": {
+    "construction": "standard + EVAL-010 correction with phase scales 1,1,1,0",
+    "sha256": "d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042",
+    "edax_level_8": {
+      "games": 100,
+      "wins": 38,
+      "draws": 9,
+      "losses": 53,
+      "score_rate": 0.425,
+      "mean_margin": -7.37,
+      "score_difference_vs_standard": 0.05,
+      "score_difference_95_ci": [
+        -0.06,
+        0.16
+      ],
+      "margin_difference_vs_standard": 1.91,
+      "margin_difference_95_ci": [
+        -1.62,
+        5.58
+      ]
+    }
+  },
+  "architecture_audit": {
+    "inputs": {
+      "signed": 23,
+      "color_invariant_context": 3
+    },
+    "linear_parameters": 104,
+    "interaction_parameters": 3588,
+    "standard_base_mse_reduction_percent": {
+      "linear": [
+        13.5803,
+        13.7409,
+        13.3833
+      ],
+      "interaction": [
+        17.7863,
+        18.1571,
+        17.7131
+      ]
+    },
+    "eval_010_base_mse_reduction_percent": {
+      "linear": [
+        5.1653,
+        5.2364,
+        5.0176
+      ],
+      "interaction": [
+        10.6172,
+        11.0486,
+        10.7463
+      ]
+    },
+    "conclusion": "Interaction signal remains after EVAL-010, especially in phases 1-3, but it has not exceeded the full additive-table control or passed a playing-strength gate."
+  },
+  "search_combination": {
+    "candidate": "adaptive two-ply LMR plus calibrated MPC",
+    "depth_10_node_change_vs_mpc": {
+      "one_thread": -0.0431,
+      "four_threads": -0.0429
+    },
+    "timed_500ms_depth_change_vs_mpc": {
+      "one_thread": 0.3125,
+      "four_threads": 0.0625
+    },
+    "decision": "rejected"
+  },
+  "decision": {
+    "standard_model_changed": false,
+    "phase_3_disabled_candidate": "advance to Edax L11 tournament-condition evaluation",
+    "interaction_runtime": "not implemented until ranking/regret training and speed gates are defined",
+    "adaptive_lmr_plus_mpc": "rejected because parallel depth gain missed the predeclared gate"
+  }
+}
