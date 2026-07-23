@@ -75,6 +75,11 @@ from training.build_corpus import (
 from training.materialize_dataset import aggregate_observations
 from training.evaluate_ranking import average_ranks, pairwise_accuracy
 from training.analyze_match_pairs import read_opening_pairs
+from training.analyze_opening_ranking import (
+    MoveCandidate,
+    java_divide,
+    select_candidate,
+)
 from training.generate_edax_teacher import (
     parse_result_line,
     server_position_to_obf,
@@ -89,6 +94,31 @@ from training.audit_evaluator_architecture import (
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
+    def test_opening_ranking_teacher_weight(self) -> None:
+        statistical = MoveCandidate(
+            square=10,
+            games=100,
+            statistical_quality=700,
+            teacher_score=-800,
+        )
+        evaluated = MoveCandidate(
+            square=20,
+            games=80,
+            statistical_quality=650,
+            teacher_score=1600,
+        )
+        candidates = [statistical, evaluated]
+
+        self.assertEqual(
+            select_candidate(candidates, None, 6400).square,
+            statistical.square,
+        )
+        self.assertEqual(
+            select_candidate(candidates, 8, 6400).square,
+            evaluated.square,
+        )
+        self.assertEqual(java_divide(-7, 3), -2)
+
     def test_ranking_phase_boundaries_match_model_phases(self) -> None:
         ply = np.asarray([8, 19, 20, 29, 30, 39, 40, 52], dtype=np.uint8)
         np.testing.assert_array_equal(

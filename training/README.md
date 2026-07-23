@@ -106,6 +106,45 @@ WTHORは`1977-1989`統合版と1990～2025年の年別ZIPを使う。全37アー
 
 WTHORの24空き理論値は該当局面に付与する。分割は12手目の盤面を8対称で正規化した定石系列単位で80%・10%・10%へ割り当てる。
 
+## 定石の再生成と順位付け
+
+`OpeningBookBuilder`はWTBとWTHOR ZIPを直接読み、統計品質と固定深さ教師探索を組み合わせて候補手を順位付けする。ディレクトリ指定時に年別2001～2015年が揃っていれば、重複する旧`WTH_2001-2015.ZIP`は自動除外される。終局前に切れた棋譜とWTHOR最終スコアに一致しない棋譜も定石統計へ加えない。
+
+```powershell
+java -cp .build OpeningBookBuilder `
+  .training/books/candidate/opening-book.bin 18 16 10 `
+  --teacher-model .training/models/model/evaluation-tables.bin `
+  --teacher-time-ms 30000 `
+  --teacher-divisor 64 `
+  --teacher-score-bound 6400 `
+  --teacher-table-entries 4194304 `
+  --audit .training/books/candidate/ranking.tsv `
+  .training/sources/wthor
+```
+
+`teacherDivisor`が小さいほど教師評価を強く反映する。監査TSVには候補ごとの出現数、勝敗、統計品質、教師スコア、完遂深さ、ノード数、選択結果、教師モデルSHAを保存する。同じモデルSHAと目標深さの監査TSVは再生成時のキャッシュにできる。
+
+```powershell
+java -cp .build OpeningBookBuilder `
+  .training/books/candidate-2/opening-book.bin 18 16 10 `
+  --teacher-model .training/models/model/evaluation-tables.bin `
+  --teacher-cache .training/books/candidate/ranking.tsv `
+  --audit .training/books/candidate-2/ranking.tsv `
+  .training/sources/wthor
+```
+
+順位重みは生成に使っていない棋譜で比較する。次は2024年だけを保持データとして、統計のみと複数の教師重みを同時に評価する例である。
+
+```powershell
+python -m training.analyze_opening_ranking `
+  .training/books/train/ranking.tsv `
+  --archives WTH_2024.ZIP `
+  --divisors stats,64,32,16,8,4 `
+  --output .training/books/train/validation-2024.json
+```
+
+定石本体を更新する前に、`EvaluationMatchRunner`の末尾へ旧・新の定石パスを指定し、同じopening seedで別々に測定する。定石生成・順位付けを最初に検証したBOOK-003の結果は[BOOK-003実験報告](../benchmark/results/book-003-deep-ranking-2026-07-23.md)に記録しており、この実験では候補を棄却して本番定石を維持した。
+
 主なオプションは次で確認できる。
 
 ```powershell

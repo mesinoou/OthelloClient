@@ -42,6 +42,9 @@ public final class EvaluationMatchRunner {
         PositionEvaluator modelOpponent = settings.opponent == Opponent.MODEL
             ? LearnedEvaluator.load(settings.opponentModelPath)
             : null;
+        OpeningBook openingBook = settings.openingBookPath == null
+            ? OpeningBook.empty()
+            : OpeningBook.load(settings.openingBookPath);
         List<Opening> openings = generateOpenings(
             settings.pairs,
             settings.openingPlies,
@@ -74,7 +77,10 @@ public final class EvaluationMatchRunner {
                 + (settings.opponent == Opponent.MODEL
                     ? "off(model-match)"
                     : settings.multiProbCutEnabled)
-                + ", openingBook=off"
+                + ", openingBook="
+                + (settings.openingBookPath == null
+                    ? "off"
+                    : settings.openingBookPath)
         );
 
         int gameNumber = 0;
@@ -89,7 +95,8 @@ public final class EvaluationMatchRunner {
                     learned,
                     modelOpponent,
                     opening,
-                    learnedColor
+                    learnedColor,
+                    openingBook
                 );
                 statistics.add(run);
                 String outcome = run.learnedMargin > 0
@@ -120,13 +127,15 @@ public final class EvaluationMatchRunner {
         PositionEvaluator learnedEvaluator,
         PositionEvaluator modelOpponent,
         Opening opening,
-        int learnedColor
+        int learnedColor,
+        OpeningBook openingBook
     ) throws IOException {
         SearchMatchPlayer learned = new SearchMatchPlayer(
             "learned",
             learnedColor,
             learnedEvaluator,
-            settings
+            settings,
+            openingBook
         );
         MatchPlayer opponent = createOpponent(
             settings,
@@ -203,7 +212,8 @@ public final class EvaluationMatchRunner {
                 "handcrafted",
                 assignedColor,
                 new Evaluator(),
-                settings
+                settings,
+                OpeningBook.empty()
             );
         }
         if (settings.opponent == Opponent.MODEL) {
@@ -211,7 +221,8 @@ public final class EvaluationMatchRunner {
                 "opponentModel",
                 assignedColor,
                 modelOpponent,
-                settings
+                settings,
+                OpeningBook.empty()
             );
         }
         return new EdaxMatchPlayer(
@@ -321,16 +332,19 @@ public final class EvaluationMatchRunner {
         private final SearchEngine engine;
         private final SearchLimits limits;
         private final SearchLimits ponderLimits;
+        private final OpeningBook openingBook;
         private final PlayerMetrics metrics = new PlayerMetrics(true);
 
         private SearchMatchPlayer(
             String name,
             int assignedColor,
             PositionEvaluator evaluator,
-            Settings settings
+            Settings settings,
+            OpeningBook openingBook
         ) {
             this.name = name;
             this.assignedColor = assignedColor;
+            this.openingBook = openingBook;
             TranspositionTable table = new TranspositionTable(TABLE_CAPACITY);
             engine = new SearchEngine(
                 evaluator,
@@ -367,6 +381,11 @@ public final class EvaluationMatchRunner {
         public int chooseMove(BitBoardPosition position, int color) {
             if (color != assignedColor) {
                 throw new IllegalArgumentException("search player color mismatch");
+            }
+            OpeningBookMove bookMove = openingBook.find(position, color);
+            if (bookMove != null) {
+                metrics.addBookMove();
+                return bookMove.square();
             }
             boolean initialTtHit = engine.hasTransposition(position, color);
             SearchResult result = engine.search(position, color, limits);
@@ -468,6 +487,7 @@ public final class EvaluationMatchRunner {
         private long wldNodes;
         private long wldElapsedNanos;
         private long initialTtHits;
+        private long bookMoves;
         private long ponderMoves;
         private long ponderElapsedNanos;
         private long ponderNodes;
@@ -513,6 +533,11 @@ public final class EvaluationMatchRunner {
             elapsedNanos += elapsed;
         }
 
+        private void addBookMove() {
+            moves++;
+            bookMoves++;
+        }
+
         private void merge(PlayerMetrics other) {
             moves += other.moves;
             elapsedNanos += other.elapsedNanos;
@@ -525,6 +550,7 @@ public final class EvaluationMatchRunner {
             wldNodes += other.wldNodes;
             wldElapsedNanos += other.wldElapsedNanos;
             initialTtHits += other.initialTtHits;
+            bookMoves += other.bookMoves;
             ponderMoves += other.ponderMoves;
             ponderElapsedNanos += other.ponderElapsedNanos;
             ponderNodes += other.ponderNodes;
@@ -553,7 +579,7 @@ public final class EvaluationMatchRunner {
                     Locale.ROOT,
                     " avgDepth=%.2f nodes=%d nodesPerSecond=%.0f "
                         + "budgetStops=%d exactMoves=%d initialTtHits=%d "
-                        + "wldAttempts=%d wldSolutions=%d wldNodes=%d "
+                        + "bookMoves=%d wldAttempts=%d wldSolutions=%d wldNodes=%d "
                         + "wldSeconds=%.3f",
                     averageDepth,
                     nodes,
@@ -561,6 +587,7 @@ public final class EvaluationMatchRunner {
                     budgetStops,
                     exactMoves,
                     initialTtHits,
+                    bookMoves,
                     wldAttempts,
                     wldSolutions,
                     wldNodes,
@@ -658,6 +685,7 @@ public final class EvaluationMatchRunner {
         private final long openingSeed;
         private final long ponderMillis;
         private final boolean multiProbCutEnabled;
+        private final Path openingBookPath;
 
         private Settings(
             Path modelPath,
@@ -671,7 +699,8 @@ public final class EvaluationMatchRunner {
             int edaxLevel,
             long openingSeed,
             long ponderMillis,
-            boolean multiProbCutEnabled
+            boolean multiProbCutEnabled,
+            Path openingBookPath
         ) {
             this.modelPath = modelPath;
             this.opponentModelPath = opponentModelPath;
@@ -685,16 +714,18 @@ public final class EvaluationMatchRunner {
             this.openingSeed = openingSeed;
             this.ponderMillis = ponderMillis;
             this.multiProbCutEnabled = multiProbCutEnabled;
+            this.openingBookPath = openingBookPath;
         }
 
         private static Settings parse(String[] args) {
-            if (args.length < 2 || args.length > 11) {
+            if (args.length < 2 || args.length > 12) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
                         + "<handcrafted|edax|model=path> [pairs] "
                         + "[openingPlies] "
                         + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
-                        + "[openingSeed] [ponderMillis] [multiProbCut]"
+                        + "[openingSeed] [ponderMillis] [multiProbCut] "
+                        + "[openingBook|off]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
@@ -722,6 +753,10 @@ public final class EvaluationMatchRunner {
             long openingSeed = longArg(args, 8, DEFAULT_OPENING_SEED);
             long ponderMillis = longArg(args, 9, 0L);
             boolean multiProbCutEnabled = booleanArg(args, 10, true);
+            Path openingBookPath = args.length <= 11
+                || "off".equalsIgnoreCase(args[11])
+                    ? null
+                    : Paths.get(args[11]);
             if (pairs < 1 || pairs > 1000) {
                 throw new IllegalArgumentException("pairs must be 1..1000");
             }
@@ -761,7 +796,8 @@ public final class EvaluationMatchRunner {
                 edaxLevel,
                 openingSeed,
                 ponderMillis,
-                multiProbCutEnabled
+                multiProbCutEnabled,
+                openingBookPath
             );
         }
 
