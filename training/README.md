@@ -276,6 +276,19 @@ python -u -m training.train_search_correction `
 
 `generate_edax_teacher`は入力を変更せず、`edax_level`、`edax_depth`、`edax_score`、`edax_time_ms`、`edax_nodes`、`edax_pv`を追加する。`.obf`と実行条件・全SHA-256を含む同名の`.json`も同じ場所へ保存する。EVAL-006では候補自身が訪れた葉を再採点する反復で初回モデルの劣化を解消したが、Edax L8に対する改善は統計的に確認できず、モデルは不採用とした。
 
+phase別biasだけを切り分ける場合は、元モデルの表を変えずに候補を生成できる。
+
+```powershell
+python -m training.adjust_model_bias `
+  --base-model data/evaluation-tables.bin `
+  --output-dir .training/models/phase-bias-candidate `
+  --bias-discs 1.0,2.5,3.5,2.0 `
+  --scale 1.0 `
+  --overwrite
+```
+
+この機能は仮説検証用であり、生成したbiasが有効であることを保証しない。EVAL-007では探索葉上のEdax平均残差を加えた候補がEdax L8で悪化したため、同じ値を標準モデルへ統合してはならない。
+
 ### 2.7 小規模確認
 
 ```powershell

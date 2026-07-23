@@ -1,0 +1,59 @@
+{
+  "experiment": "EVAL-007",
+  "status": "rejected",
+  "hypothesis": "phase-wise mean Edax residual is a missing side-to-move tempo term",
+  "teacher_residual_discs": {
+    "train": [
+      0.99,
+      2.65,
+      3.69,
+      2.41
+    ],
+    "validation": [
+      0.91,
+      2.58,
+      4.16,
+      1.97
+    ],
+    "test": [
+      1.02,
+      2.89,
+      4.10,
+      2.56
+    ]
+  },
+  "full_candidate": {
+    "phase_bias_score": [
+      99,
+      265,
+      369,
+      241
+    ],
+    "sha256": "a6b3d69147a590f320b6228d55ec55447dcdf17c7da145426a7d23c44ef3e5ac",
+    "fixed_depth_6_score_rate": 0.5,
+    "fixed_depth_6_mean_margin": 0.12,
+    "edax_level_8_score_rate": 0.355,
+    "edax_level_8_mean_margin": -10.41,
+    "score_rate_difference_vs_current": -0.02,
+    "score_rate_difference_95_ci": [
+      -0.12,
+      0.08
+    ],
+    "mean_margin_difference_vs_current": -1.13,
+    "mean_margin_difference_95_ci": [
+      -4.29,
+      1.88
+    ]
+  },
+  "half_candidate": {
+    "sha256": "5f6a364b626102e217d2e5096066a917534f125063b3dbf9a83faebae9626afb",
+    "fixed_depth_6_score_rate": 0.5,
+    "fixed_depth_6_mean_margin": 0.26,
+    "edax_gate": "not run after full candidate failed"
+  },
+  "seeds": {
+    "direct": 20260808,
+    "bootstrap": 20260809,
+    "edax": 20260721
+  }
+}

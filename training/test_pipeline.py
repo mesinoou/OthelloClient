@@ -34,6 +34,7 @@ from training.export_java_model import (
 )
 from training.java_model import (
     JavaEvaluationModel,
+    adjust_java_model_bias,
     merge_java_models,
     read_java_model,
     scale_java_model,
@@ -490,6 +491,29 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             phase_model = read_java_model(phase_path)
             self.assertTrue(phase_model.tables[0][0].any())
             self.assertFalse(phase_model.tables[1][0].any())
+
+            bias_path = directory / "bias.bin"
+            adjust_java_model_bias(
+                output_path,
+                bias_path,
+                (100, 200, 300, 400),
+            )
+            biased = read_java_model(bias_path)
+            self.assertEqual((100, 200, 300, 400), biased.phase_bias)
+            for original, adjusted in zip(
+                loaded.tables,
+                biased.tables,
+                strict=True,
+            ):
+                for original_table, adjusted_table in zip(
+                    original,
+                    adjusted,
+                    strict=True,
+                ):
+                    np.testing.assert_array_equal(
+                        original_table,
+                        adjusted_table,
+                    )
 
     def test_search_correction_maps_terminal_scores_to_margin_scale(self) -> None:
         scores = np.asarray(

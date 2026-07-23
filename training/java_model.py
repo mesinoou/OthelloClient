@@ -316,3 +316,28 @@ def scale_java_model(
         ),
     )
     return write_java_model(scaled, output_path)
+
+
+def adjust_java_model_bias(
+    source_path: Path,
+    output_path: Path,
+    additions: tuple[int, ...],
+) -> dict[str, int]:
+    if len(additions) != PHASE_COUNT:
+        raise ValueError("bias additions must contain four values")
+    source = read_java_model(source_path)
+    adjusted = JavaEvaluationModel(
+        phase_starts=source.phase_starts,
+        score_scale=source.score_scale,
+        score_divisor=source.score_divisor,
+        phase_bias=tuple(
+            bias + addition
+            for bias, addition in zip(
+                source.phase_bias,
+                additions,
+                strict=True,
+            )
+        ),
+        tables=source.tables,
+    )
+    return write_java_model(adjusted, output_path)
