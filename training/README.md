@@ -321,6 +321,8 @@ python -u -m training.train_search_correction `
 
 `--phase-starts`は2〜16個の昇順整数を受け付ける。現行runtimeと異なる境界は`--analysis-only`なしでは拒否され、誤って互換性のないJavaモデルを作らない。EVAL-009では8段階の追加改善が小さく、runtime形式の拡張は行っていない。
 
+EVAL-010では4段階補正を160 epochまで収束させ、候補自身の葉を再採点する反復を行った。反復2は固定深さで現行を上回り、Edax L8も現行37.5%に対して41.5%だったが、事前のL11進級線+5 pointには届かなかった。反復3は候補間対局に勝ちながらEdax L8で26.5%へ崩壊したため、DAgger反復は単調な世代更新として扱わない。詳細は`benchmark/results/eval-010-converged-dagger-2026-07-23.md`を参照する。
+
 ### 2.7 小規模確認
 
 ```powershell

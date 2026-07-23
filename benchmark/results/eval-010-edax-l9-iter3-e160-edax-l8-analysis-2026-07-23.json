@@ -1,0 +1,28 @@
+{
+  "candidate": "benchmark\\results\\eval-010-edax-l9-iter3-e160-edax-l8-100-2026-07-23.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.265,
+  "score_rate_95_ci": [
+    0.195,
+    0.335
+  ],
+  "mean_margin": -11.89,
+  "mean_margin_95_ci": [
+    -14.45,
+    -9.27
+  ],
+  "bootstrap_samples": 100000,
+  "seed": 20260811,
+  "baseline": "benchmark\\results\\eval-005-current-mpc-off-edax-l8-100-2026-07-23.txt",
+  "score_rate_difference": -0.11,
+  "score_rate_difference_95_ci": [
+    -0.22,
+    -0.005
+  ],
+  "mean_margin_difference": -2.61,
+  "mean_margin_difference_95_ci": [
+    -6.12,
+    1.02
+  ]
+}

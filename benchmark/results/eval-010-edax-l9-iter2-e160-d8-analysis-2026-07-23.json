@@ -1,0 +1,17 @@
+{
+  "candidate": "benchmark\\results\\eval-010-edax-l9-iter2-e160-d8-v-current-2026-07-23.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.56,
+  "score_rate_95_ci": [
+    0.495,
+    0.63
+  ],
+  "mean_margin": 1.47,
+  "mean_margin_95_ci": [
+    -0.88,
+    3.87
+  ],
+  "bootstrap_samples": 100000,
+  "seed": 20260811
+}

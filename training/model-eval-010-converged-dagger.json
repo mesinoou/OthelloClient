@@ -1,0 +1,59 @@
+{
+  "experiment": "EVAL-010",
+  "status": "best-candidate-held-not-integrated",
+  "training": {
+    "teacher": "edax",
+    "epochs": 160,
+    "patience": 15,
+    "output_anchor": 0.5,
+    "device": "cuda",
+    "seed": 20260805
+  },
+  "iteration_1": {
+    "candidate_sha256": "2fea9eefafd427fbe50b5587215a49e7fe8ec7178fcc6deada301cb302add4ee",
+    "fixed_depth_6_score_rate": 0.495,
+    "fixed_depth_6_mean_margin": -1.78,
+    "edax_level_8_score_rate": 0.405,
+    "edax_level_8_mean_margin": -8.5
+  },
+  "iteration_2": {
+    "teacher_tsv_sha256": "1fee1af572c2875044ed631e6f5e3f4322643a821171700d12dc97e2a2eb6e21",
+    "dataset_metadata_sha256": "2f46c2dce07780cc7492c0be8a4f33bba46afcd8a1a449757e0462743098ec8e",
+    "candidate_sha256": "cbee474cbee0592e627ef631bb0535f39545b0d1c12e8147613cdcd8174ef805",
+    "fixed_depth_6_score_rate": 0.565,
+    "fixed_depth_6_mean_margin": 2.33,
+    "fixed_depth_8_score_rate": 0.56,
+    "fixed_depth_8_mean_margin": 1.47,
+    "edax_level_8_score_rate": 0.415,
+    "edax_level_8_mean_margin": -8.77,
+    "edax_score_difference_vs_current": 0.04,
+    "edax_score_difference_95_ci": [
+      -0.07,
+      0.145
+    ],
+    "edax_margin_difference_vs_current": 0.51,
+    "edax_margin_difference_95_ci": [
+      -2.74,
+      3.68
+    ]
+  },
+  "iteration_3": {
+    "teacher_tsv_sha256": "f7213c0df3c4b2fab68c7e55638267152b61c0c65d2f08c0da6e387cd678958d",
+    "dataset_metadata_sha256": "e031d3d5184dae1b56c75517e3b390a091feb47fa5e1766f4be43f597f68b893",
+    "candidate_sha256": "8736504da373e9a098add4baf020798b697474af1698cf9400fd73ddd195ae4a",
+    "fixed_depth_6_vs_current_score_rate": 0.51,
+    "fixed_depth_6_vs_iteration_2_score_rate": 0.595,
+    "edax_level_8_score_rate": 0.265,
+    "edax_level_8_mean_margin": -11.89,
+    "edax_score_difference_vs_current": -0.11,
+    "edax_score_difference_95_ci": [
+      -0.22,
+      -0.005
+    ]
+  },
+  "seeds": {
+    "direct": 20260810,
+    "edax": 20260721,
+    "bootstrap": 20260811
+  }
+}
