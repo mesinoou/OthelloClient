@@ -81,6 +81,7 @@ from training.generate_edax_teacher import (
 )
 from training.sample_ranking_positions import phase_ids
 from training.train_potential_mobility_correction import fit_phase_table
+from training.fit_mpc import load_many, validate_split_paths
 from training.audit_evaluator_architecture import (
     AntisymmetricHead,
     balance_source_weights,
@@ -710,6 +711,33 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             -negative.numpy(),
             atol=1.0e-6,
         )
+
+    def test_mpc_calibration_rejects_duplicate_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            first = directory / "first.csv"
+            first.write_text(
+                "seed,phase,sample,depth,shallowScore,deepScore\n"
+                "1,0,0,8,10,20\n",
+                encoding="utf-8",
+            )
+            second = directory / "second.csv"
+            second.write_text(
+                "seed,phase,sample,depth,shallowScore,deepScore\n"
+                "2,0,0,8,30,40\n",
+                encoding="utf-8",
+            )
+            combined = load_many([first, second], 2)
+            self.assertEqual([(10.0, 20.0), (30.0, 40.0)], combined[(0, 8)])
+            with self.assertRaisesRegex(ValueError, "must be unique"):
+                load_many([first, first], 2)
+            with self.assertRaisesRegex(ValueError, "shared by"):
+                validate_split_paths(
+                    {
+                        "train": [first],
+                        "validation": [first],
+                    }
+                )
 
     def test_search_correction_combines_only_common_arrays(self) -> None:
         combined = concatenate_datasets(

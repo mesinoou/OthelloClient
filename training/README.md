@@ -374,7 +374,24 @@ python -u -m training.audit_evaluator_architecture `
 
 入力は16個のJava表出力、7個の符号付き盤面特徴、3個の色不変contextである。MLP出力は色交換した2回のforwardの差から作り、評価値の色反対称性を構造的に保証する。checkpointはphaseごとに最悪dataset sourceのvalidation Huber比で選ぶ。
 
-### 2.8 小規模確認
+### 2.8 Multi-ProbCutの独立校正
+
+評価モデルを変更した場合、MPC係数とモデルSHAをそのまま流用しない。`MpcCalibrationRunner`でMPCを無効化した深さ4/6/8/10のscoreを採取し、回帰fit、conformal margin校正、群選択、最終確認を独立データへ分ける。
+
+```powershell
+python -m training.fit_mpc `
+  --train .training/mpc/seed-1.csv `
+  --train .training/mpc/seed-2.csv `
+  --calibration .training/mpc/seed-3.csv `
+  --validation .training/mpc/seed-4.csv `
+  --holdout .training/mpc/seed-5.csv `
+  --reduction 4 `
+  --output .training/mpc/parameters.json
+```
+
+同じ役割へ複数ファイルを指定する場合は引数を繰り返す。`--calibration`を省略した場合だけ従来互換としてtrain集合からmarginを計算する。新しい実験では4分割を使用し、validationとholdoutの片側false-cut率がともに1%以下のphase/depthだけを有効化する。
+
+### 2.9 小規模確認
 
 ```powershell
 python -m training.build_corpus `

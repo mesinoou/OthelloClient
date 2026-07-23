@@ -43,6 +43,44 @@ def load(
     return grouped
 
 
+def load_many(
+    paths: list[Path],
+    reduction: int,
+) -> dict[tuple[int, int], list[tuple[float, float]]]:
+    normalized = [path.resolve() for path in paths]
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("calibration input paths must be unique")
+    combined: dict[tuple[int, int], list[tuple[float, float]]] = defaultdict(
+        list
+    )
+    expected_keys: set[tuple[int, int]] | None = None
+    for path in paths:
+        groups = load(path, reduction)
+        if expected_keys is None:
+            expected_keys = set(groups)
+        elif set(groups) != expected_keys:
+            raise ValueError(f"{path}: calibration group mismatch")
+        for key, samples in groups.items():
+            combined[key].extend(samples)
+    return combined
+
+
+def validate_split_paths(
+    splits: dict[str, list[Path]],
+) -> None:
+    owners: dict[Path, str] = {}
+    for split, paths in splits.items():
+        for path in paths:
+            normalized = path.resolve()
+            previous = owners.get(normalized)
+            if previous is not None:
+                raise ValueError(
+                    f"calibration input {path} is shared by "
+                    f"{previous} and {split}"
+                )
+            owners[normalized] = split
+
+
 def fit(samples: list[tuple[float, float]]) -> tuple[float, float, float, float]:
     count = len(samples)
     mean_x = sum(x for x, _ in samples) / count
@@ -119,24 +157,53 @@ def assess_margins(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train", type=Path, required=True)
-    parser.add_argument("--validation", type=Path, required=True)
-    parser.add_argument("--holdout", type=Path, required=True)
+    parser.add_argument("--train", type=Path, action="append", required=True)
+    parser.add_argument(
+        "--validation",
+        type=Path,
+        action="append",
+        required=True,
+    )
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        action="append",
+        default=[],
+        help="independent conformal-margin data; defaults to train data",
+    )
+    parser.add_argument("--holdout", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--reduction", type=int, choices=(2, 4), default=2)
     args = parser.parse_args()
 
-    train = load(args.train, args.reduction)
-    validation = load(args.validation, args.reduction)
-    holdout = load(args.holdout, args.reduction)
-    if train.keys() != validation.keys() or train.keys() != holdout.keys():
+    split_paths = {
+        "train": args.train,
+        "validation": args.validation,
+        "holdout": args.holdout,
+    }
+    if args.calibration:
+        split_paths["calibration"] = args.calibration
+    validate_split_paths(split_paths)
+    train = load_many(args.train, args.reduction)
+    calibration = (
+        load_many(args.calibration, args.reduction)
+        if args.calibration
+        else train
+    )
+    validation = load_many(args.validation, args.reduction)
+    holdout = load_many(args.holdout, args.reduction)
+    if (
+        train.keys() != calibration.keys()
+        or train.keys() != validation.keys()
+        or train.keys() != holdout.keys()
+    ):
         raise ValueError("calibration group mismatch")
 
     groups = []
     for phase, depth in sorted(train):
         slope, intercept, sigma, r_squared = fit(train[(phase, depth)])
         false_high_margin, false_low_margin = conformal_margins(
-            train[(phase, depth)], slope, intercept
+            calibration[(phase, depth)], slope, intercept
         )
         validation_stats = assess(
             validation[(phase, depth)], slope, intercept, sigma
@@ -176,6 +243,13 @@ def main() -> None:
                 "false_high_margin": false_high_margin,
                 "false_low_margin": false_low_margin,
                 "train": assess(train[(phase, depth)], slope, intercept, sigma),
+                "calibration_conformal": assess_margins(
+                    calibration[(phase, depth)],
+                    slope,
+                    intercept,
+                    false_high_margin,
+                    false_low_margin,
+                ),
                 "validation": validation_stats,
                 "holdout": holdout_stats,
                 "validation_conformal": validation_conformal,
@@ -183,14 +257,36 @@ def main() -> None:
             }
         )
 
+    version_two = bool(args.calibration) or any(
+        len(paths) > 1
+        for paths in (args.train, args.validation, args.holdout)
+    )
     result = {
-        "format": "mpc-calibration-v1",
-        "train": str(args.train),
-        "validation": str(args.validation),
-        "holdout": str(args.holdout),
+        "format": (
+            "mpc-calibration-v2"
+            if version_two
+            else "mpc-calibration-v1"
+        ),
         "reduction": args.reduction,
         "groups": groups,
     }
+    if version_two:
+        result.update(
+            {
+                "train": [str(path) for path in args.train],
+                "calibration": [str(path) for path in args.calibration],
+                "validation": [str(path) for path in args.validation],
+                "holdout": [str(path) for path in args.holdout],
+            }
+        )
+    else:
+        result.update(
+            {
+                "train": str(args.train[0]),
+                "validation": str(args.validation[0]),
+                "holdout": str(args.holdout[0]),
+            }
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     for group in groups:
@@ -199,6 +295,7 @@ def main() -> None:
             "sigma={sigma:.2f} r2={r_squared:.4f} "
             "gaussian_validation={vhi}/{vlo} gaussian_holdout={hhi}/{hlo} "
             "margins={false_high_margin:.1f}/{false_low_margin:.1f} "
+            "conformal_calibration={cahi}/{calo} "
             "conformal_validation={cvhi}/{cvlo} "
             "conformal_holdout={chhi}/{chlo} enabled={enabled}".format(
                 **group,
@@ -206,6 +303,8 @@ def main() -> None:
                 vlo=group["validation"]["false_low_risk"],
                 hhi=group["holdout"]["false_high_risk"],
                 hlo=group["holdout"]["false_low_risk"],
+                cahi=group["calibration_conformal"]["false_high_risk"],
+                calo=group["calibration_conformal"]["false_low_risk"],
                 cvhi=group["validation_conformal"]["false_high_risk"],
                 cvlo=group["validation_conformal"]["false_low_risk"],
                 chhi=group["holdout_conformal"]["false_high_risk"],
