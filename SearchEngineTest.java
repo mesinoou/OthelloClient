@@ -19,6 +19,7 @@ public final class SearchEngineTest {
         testStabilityBounds();
         testStabilityCutoffMatchesBaseline();
         testTranspositionTableConsistency();
+        testSecondaryOrderingPreservesBuckets();
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
         testLateMoveReductionActivation();
@@ -93,6 +94,26 @@ public final class SearchEngineTest {
             SearchEngine.wldScoreForDifference(-1),
             "WLD loss"
         );
+    }
+
+    private static void testSecondaryOrderingPreservesBuckets() {
+        long[] moves = {
+            100L, 101L, 102L, 103L, 104L, 105L, 106L, 107L
+        };
+        int[] priorities = {0, 30, 10, 20, 2, 5, 1, 4};
+        SearchEngine.sortMovesBySecondary(moves, priorities, 1, 4);
+        SearchEngine.sortMovesBySecondary(moves, priorities, 4, 8);
+
+        long[] expected = {
+            100L, 101L, 103L, 102L, 105L, 107L, 104L, 106L
+        };
+        for (int index = 0; index < expected.length; index++) {
+            if (moves[index] != expected[index]) {
+                throw new AssertionError(
+                    "secondary ordering mismatch at " + index
+                );
+            }
+        }
     }
 
     private static void testExactLastNSolverEligibility() {

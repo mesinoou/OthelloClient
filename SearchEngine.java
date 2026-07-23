@@ -45,6 +45,8 @@ public final class SearchEngine {
     private static final long CORNERS = 0x8100000000000081L;
 
     private final PositionEvaluator evaluator;
+    private final PositionEvaluator moveOrderingEvaluator;
+    private final int moveOrderingMinimumDepth;
     private final TranspositionTable table;
     private final boolean endgameOrderingEnabled;
     private final int endgameThresholdOverride;
@@ -195,10 +197,52 @@ public final class SearchEngine {
         boolean multiProbCutEnabled,
         boolean wldEnabled
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            stabilityCutoffEnabled,
+            multiProbCutEnabled,
+            wldEnabled,
+            null,
+            0
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean stabilityCutoffEnabled,
+        boolean multiProbCutEnabled,
+        boolean wldEnabled,
+        PositionEvaluator moveOrderingEvaluator,
+        int moveOrderingMinimumDepth
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
+        if (moveOrderingEvaluator == null) {
+            if (moveOrderingMinimumDepth != 0) {
+                throw new IllegalArgumentException(
+                    "ordering depth requires an ordering evaluator"
+                );
+            }
+        } else if (moveOrderingMinimumDepth < 1
+            || moveOrderingMinimumDepth > 64) {
+            throw new IllegalArgumentException(
+                "ordering depth must be between 1 and 64"
+            );
+        }
         this.evaluator = evaluator;
+        this.moveOrderingEvaluator = moveOrderingEvaluator;
+        this.moveOrderingMinimumDepth = moveOrderingMinimumDepth;
         this.table = table;
         this.endgameOrderingEnabled = endgameOrderingEnabled;
         if (endgameThresholdOverride < 0
@@ -667,6 +711,7 @@ public final class SearchEngine {
             player,
             opponent,
             legalMoves,
+            depth,
             0,
             previousBestSquare,
             tableBestSquare,
@@ -764,6 +809,7 @@ public final class SearchEngine {
             player,
             opponent,
             legalMoves,
+            depth,
             0,
             previousBestSquare,
             tableBestSquare,
@@ -1176,6 +1222,7 @@ public final class SearchEngine {
             player,
             opponent,
             legalMoves,
+            depth,
             ply,
             -1,
             orderingTableBestSquare,
@@ -1876,6 +1923,7 @@ public final class SearchEngine {
         long player,
         long opponent,
         long legalMoves,
+        int depth,
         int ply,
         int preferredSquare,
         int tableBestSquare,
@@ -1885,6 +1933,10 @@ public final class SearchEngine {
         long remaining = legalMoves;
         boolean endgameOrdering = endgameOrderingEnabled
             && BitBoard.countEmpty(player, opponent) <= MAX_WLD_THRESHOLD;
+        boolean learnedOrdering = moveOrderingEvaluator != null
+            && depth >= moveOrderingMinimumDepth
+            && !exactSearchActive
+            && BitBoard.countEmpty(player, opponent) > MAX_WLD_THRESHOLD;
         long oddRegions = endgameOrdering
             ? EndgameRegionAnalyzer.oddRegionMask(~(player | opponent))
             : 0L;
@@ -1919,6 +1971,9 @@ public final class SearchEngine {
 
             searchContext.moves[ply][count] = move;
             searchContext.priorities[ply][count] = priority;
+            searchContext.secondaryPriorities[ply][count] = learnedOrdering
+                ? -moveOrderingEvaluator.evaluate(nextOpponent, nextPlayer)
+                : 0;
             count++;
         }
 
@@ -1936,13 +1991,61 @@ public final class SearchEngine {
                     searchContext.priorities[ply][best];
                 searchContext.priorities[ply][best] = priority;
 
+                int secondary =
+                    searchContext.secondaryPriorities[ply][left];
+                searchContext.secondaryPriorities[ply][left] =
+                    searchContext.secondaryPriorities[ply][best];
+                searchContext.secondaryPriorities[ply][best] = secondary;
+
                 long move = searchContext.moves[ply][left];
                 searchContext.moves[ply][left] =
                     searchContext.moves[ply][best];
                 searchContext.moves[ply][best] = move;
             }
         }
+        if (learnedOrdering) {
+            int fullDepthEnd = Math.min(LMR_MINIMUM_MOVE_INDEX, count);
+            sortMovesBySecondary(
+                searchContext.moves[ply],
+                searchContext.secondaryPriorities[ply],
+                1,
+                fullDepthEnd
+            );
+            sortMovesBySecondary(
+                searchContext.moves[ply],
+                searchContext.secondaryPriorities[ply],
+                LMR_MINIMUM_MOVE_INDEX,
+                count
+            );
+        }
         return count;
+    }
+
+    static void sortMovesBySecondary(
+        long[] moves,
+        int[] priorities,
+        int fromIndex,
+        int toIndex
+    ) {
+        int start = Math.max(0, fromIndex);
+        int end = Math.min(Math.min(moves.length, priorities.length), toIndex);
+        for (int left = start; left < end - 1; left++) {
+            int best = left;
+            for (int right = left + 1; right < end; right++) {
+                if (priorities[right] > priorities[best]) {
+                    best = right;
+                }
+            }
+            if (best != left) {
+                int priority = priorities[left];
+                priorities[left] = priorities[best];
+                priorities[best] = priority;
+
+                long move = moves[left];
+                moves[left] = moves[best];
+                moves[best] = move;
+            }
+        }
     }
 
     private int tableBestSquare(

@@ -4,6 +4,7 @@ final class SearchContext {
 
     final long[][] moves = new long[MAX_PLY][64];
     final int[][] priorities = new int[MAX_PLY][64];
+    final int[][] secondaryPriorities = new int[MAX_PLY][64];
 
     long nodes;
     long transpositionHits;
