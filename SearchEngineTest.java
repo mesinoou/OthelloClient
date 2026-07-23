@@ -19,6 +19,7 @@ public final class SearchEngineTest {
         testStabilityBounds();
         testStabilityCutoffMatchesBaseline();
         testTranspositionTableConsistency();
+        testRootOrderingEvaluatorPreservesResult();
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
         testLateMoveReductionActivation();
@@ -78,6 +79,58 @@ public final class SearchEngineTest {
         if (SearchEngine.wldTrialNanos(10_000_000_000L)
             != 6_500_000_000L) {
             throw new AssertionError("WLD trial budget is invalid");
+        }
+    }
+
+    private static void testRootOrderingEvaluatorPreservesResult() {
+        PositionToMove sample = createMidgame(20);
+        int rootChildEmpties = sample.position.emptyCount() - 1;
+        RootOnlyEvaluator ordering = new RootOnlyEvaluator(rootChildEmpties);
+        SearchLimits limits = new SearchLimits(30_000L, 7, 1);
+        SearchEngine baseline = new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 16)
+        );
+        SearchEngine ordered = new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 16),
+            true,
+            0,
+            true,
+            true,
+            true,
+            true,
+            true,
+            ordering
+        );
+
+        SearchResult expected = baseline.search(
+            sample.position,
+            sample.color,
+            limits
+        );
+        SearchResult actual = ordered.search(
+            sample.position,
+            sample.color,
+            limits
+        );
+        assertEquals(
+            expected.completedDepth(),
+            actual.completedDepth(),
+            "root ordering completed depth"
+        );
+        assertEquals(
+            expected.bestSquare(),
+            actual.bestSquare(),
+            "root ordering best move"
+        );
+        assertEquals(
+            expected.score(),
+            actual.score(),
+            "root ordering score"
+        );
+        if (ordering.calls == 0) {
+            throw new AssertionError("root ordering evaluator was not used");
         }
     }
 
@@ -1183,6 +1236,39 @@ public final class SearchEngineTest {
         private PositionToMove(BitBoardPosition position, int color) {
             this.position = position;
             this.color = color;
+        }
+    }
+
+    private static final class RootOnlyEvaluator
+        implements PositionEvaluator {
+
+        private final int expectedEmpties;
+        private int calls;
+
+        private RootOnlyEvaluator(int expectedEmpties) {
+            this.expectedEmpties = expectedEmpties;
+        }
+
+        @Override
+        public int evaluate(long player, long opponent) {
+            int empties = BitBoard.countEmpty(player, opponent);
+            if (empties != expectedEmpties) {
+                throw new AssertionError(
+                    "ordering evaluator called below root: empties=" + empties
+                );
+            }
+            calls++;
+            return EVALUATOR.evaluate(player, opponent);
+        }
+
+        @Override
+        public int terminalScore(long player, long opponent) {
+            return EVALUATOR.terminalScore(player, opponent);
+        }
+
+        @Override
+        public String description() {
+            return "root-only-test";
         }
     }
 }

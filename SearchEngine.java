@@ -45,6 +45,7 @@ public final class SearchEngine {
     private static final long CORNERS = 0x8100000000000081L;
 
     private final PositionEvaluator evaluator;
+    private final PositionEvaluator rootOrderingEvaluator;
     private final TranspositionTable table;
     private final boolean endgameOrderingEnabled;
     private final int endgameThresholdOverride;
@@ -195,10 +196,37 @@ public final class SearchEngine {
         boolean multiProbCutEnabled,
         boolean wldEnabled
     ) {
+        this(
+            evaluator,
+            table,
+            endgameOrderingEnabled,
+            endgameThresholdOverride,
+            lmrEnabled,
+            exactLastNSolverEnabled,
+            stabilityCutoffEnabled,
+            multiProbCutEnabled,
+            wldEnabled,
+            null
+        );
+    }
+
+    SearchEngine(
+        PositionEvaluator evaluator,
+        TranspositionTable table,
+        boolean endgameOrderingEnabled,
+        int endgameThresholdOverride,
+        boolean lmrEnabled,
+        boolean exactLastNSolverEnabled,
+        boolean stabilityCutoffEnabled,
+        boolean multiProbCutEnabled,
+        boolean wldEnabled,
+        PositionEvaluator rootOrderingEvaluator
+    ) {
         if (evaluator == null) {
             throw new NullPointerException("evaluator");
         }
         this.evaluator = evaluator;
+        this.rootOrderingEvaluator = rootOrderingEvaluator;
         this.table = table;
         this.endgameOrderingEnabled = endgameOrderingEnabled;
         if (endgameThresholdOverride < 0
@@ -1902,6 +1930,14 @@ public final class SearchEngine {
             int opponentMobility = BitBoard.count(opponentMoves);
 
             int priority = -100 * opponentMobility + BitBoard.count(flips);
+            if (rootOrderingEvaluator != null
+                && ply == 0
+                && !exactSearchActive) {
+                priority -= rootOrderingEvaluator.evaluate(
+                    nextOpponent,
+                    nextPlayer
+                );
+            }
             if (endgameOrdering) {
                 if ((move & oddRegions) != 0L) {
                     priority += ODD_REGION_BONUS;
