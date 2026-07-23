@@ -302,6 +302,25 @@ python -m training.train_potential_mobility_correction `
 
 入力データセットは現行`materialize_dataset`で再生成し、`potential_mobility_own`と`potential_mobility_opponent`を含める。EVAL-008では中盤test誤差をほぼ改善しなかったため、Java評価器への表追加は行っていない。
 
+局面段階数だけを比較する場合は、Java候補を生成しないanalysis-only学習を使う。
+
+```powershell
+python -u -m training.train_search_correction `
+  --dataset-dir .training/datasets/edax-search-evaluation-full-l9-potential `
+  --base-model data/evaluation-tables.bin `
+  --output-dir .training/models/phase8-analysis `
+  --teacher edax `
+  --phase-starts 14,25,30,35,40,45,50,56 `
+  --analysis-only `
+  --epochs 160 `
+  --patience 15 `
+  --output-anchor 0.5 `
+  --device cuda `
+  --overwrite
+```
+
+`--phase-starts`は2〜16個の昇順整数を受け付ける。現行runtimeと異なる境界は`--analysis-only`なしでは拒否され、誤って互換性のないJavaモデルを作らない。EVAL-009では8段階の追加改善が小さく、runtime形式の拡張は行っていない。
+
 ### 2.7 小規模確認
 
 ```powershell

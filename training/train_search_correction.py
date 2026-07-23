@@ -60,6 +60,16 @@ def parse_args() -> argparse.Namespace:
         choices=("deep-search", "edax"),
         default="deep-search",
     )
+    parser.add_argument(
+        "--phase-starts",
+        default=None,
+        help="optional comma-separated analysis phase starts",
+    )
+    parser.add_argument(
+        "--analysis-only",
+        action="store_true",
+        help="train and evaluate without exporting a Java candidate",
+    )
     parser.add_argument("--max-samples-per-phase", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=20260805)
@@ -79,6 +89,7 @@ def load_dataset(path: Path) -> dict[str, np.ndarray]:
     with np.load(path, allow_pickle=False) as archive:
         required = {
             "phase",
+            "ply",
             "static_score",
             "deep_score",
             "occurrences",
@@ -178,6 +189,38 @@ def choose_phase_indices(
     if maximum is not None and len(indices) > maximum:
         indices = np.sort(rng.choice(indices, maximum, replace=False))
     return indices
+
+
+def phase_ids(
+    ply: np.ndarray,
+    phase_starts: tuple[int, ...],
+) -> np.ndarray:
+    return np.searchsorted(
+        np.asarray(phase_starts[1:], dtype=np.int16),
+        ply.astype(np.int16),
+        side="right",
+    ).astype(np.int8)
+
+
+def parse_phase_starts(
+    value: str | None,
+    fallback: tuple[int, ...],
+) -> tuple[int, ...]:
+    if value is None:
+        return fallback
+    starts = tuple(int(item) for item in value.split(","))
+    if not 2 <= len(starts) <= 16:
+        raise ValueError("phase starts must contain between 2 and 16 values")
+    if any(right <= left for left, right in zip(starts, starts[1:])):
+        raise ValueError("phase starts must be strictly ascending")
+    return starts
+
+
+def apply_phase_starts(
+    data: dict[str, np.ndarray],
+    phase_starts: tuple[int, ...],
+) -> None:
+    data["phase"] = phase_ids(data["ply"], phase_starts)
 
 
 def weighted_huber(
@@ -428,6 +471,15 @@ def main() -> int:
     base = read_java_model(args.base_model)
     if base.score_divisor != 1:
         raise ValueError("base model score divisor must be 1")
+    phase_starts = parse_phase_starts(
+        args.phase_starts,
+        base.phase_starts,
+    )
+    if not args.analysis_only and phase_starts != base.phase_starts:
+        raise ValueError(
+            "custom phase starts require --analysis-only until the runtime "
+            "format supports the requested phase count"
+        )
     device = resolve_device(args.device)
     torch.manual_seed(args.seed)
     if device.type == "cuda":
@@ -437,11 +489,13 @@ def main() -> int:
     train = load_dataset(args.dataset_dir / "train.npz")
     validation = load_dataset(args.dataset_dir / "validation.npz")
     test = load_dataset(args.dataset_dir / "test.npz")
+    for data in (train, validation, test):
+        apply_phase_starts(data, phase_starts)
     rng = np.random.default_rng(args.seed)
     models = []
     histories = []
     selections = []
-    for phase in range(len(base.phase_starts)):
+    for phase in range(len(phase_starts)):
         model, history, selection = train_phase(
             phase,
             train,
@@ -462,23 +516,29 @@ def main() -> int:
     save_float_models(
         float_path,
         models,
-        base.phase_starts,
+        phase_starts,
         base.score_scale,
     )
-    clipped = export_tables(
-        tables_path,
-        models,
-        base.phase_starts,
-        base.score_scale,
-        4096,
-        True,
-    )
-    correction_export = export_java_model(tables_path, correction_path)
-    candidate_export = merge_java_models(
-        args.base_model,
-        correction_path,
-        candidate_path,
-    )
+    clipped = None
+    correction_export = None
+    candidate_export = None
+    artifacts = [float_path]
+    if not args.analysis_only:
+        clipped = export_tables(
+            tables_path,
+            models,
+            phase_starts,
+            base.score_scale,
+            4096,
+            True,
+        )
+        correction_export = export_java_model(tables_path, correction_path)
+        candidate_export = merge_java_models(
+            args.base_model,
+            correction_path,
+            candidate_path,
+        )
+        artifacts.extend((tables_path, correction_path, candidate_path))
     test_metrics = evaluate_test(models, test, args, base.score_scale)
 
     metadata = {
@@ -498,7 +558,7 @@ def main() -> int:
             "base_model": str(args.base_model),
             "output_dir": str(args.output_dir),
         },
-        "phase_starts": base.phase_starts,
+        "phase_starts": phase_starts,
         "score_scale": base.score_scale,
         "selections": selections,
         "histories": histories,
@@ -511,20 +571,19 @@ def main() -> int:
                 "bytes": path.stat().st_size,
                 "sha256": sha256_file(path),
             }
-            for path in (
-                float_path,
-                tables_path,
-                correction_path,
-                candidate_path,
-            )
+            for path in artifacts
         },
         "smoke_only": args.max_samples_per_phase is not None,
+        "analysis_only": args.analysis_only,
     }
     (args.output_dir / "metadata.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"search-corrected Java model written: {candidate_path}")
+    if args.analysis_only:
+        print(f"search-correction analysis written: {args.output_dir}")
+    else:
+        print(f"search-corrected Java model written: {candidate_path}")
     return 0
 
 

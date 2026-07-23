@@ -54,6 +54,8 @@ from training.train_model import (
     wld_targets,
 )
 from training.train_search_correction import (
+    apply_phase_starts,
+    parse_phase_starts,
     teacher_scores_normalized,
     zero_output_layers,
 )
@@ -80,6 +82,24 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         np.testing.assert_array_equal(
             phase_ids(ply),
             np.asarray([0, 0, 0, 0, 1, 1, 2, 3]),
+        )
+
+    def test_search_correction_supports_analysis_phase_boundaries(self) -> None:
+        starts = parse_phase_starts(
+            "14,25,30,35,40,45,50,56",
+            (20, 30, 40, 50),
+        )
+        data = {
+            "ply": np.asarray(
+                (14, 24, 25, 29, 30, 55, 56, 59),
+                dtype=np.uint8,
+            ),
+            "phase": np.zeros(8, dtype=np.int8),
+        }
+        apply_phase_starts(data, starts)
+        np.testing.assert_array_equal(
+            data["phase"],
+            np.asarray((0, 0, 1, 1, 2, 6, 7, 7), dtype=np.int8),
         )
 
     def test_ranking_metrics_handle_ties(self) -> None:
