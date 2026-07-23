@@ -1,0 +1,115 @@
+{
+  "experiment": "EVAL-018",
+  "status": "rejected",
+  "source_experiment": "EVAL-017",
+  "candidate_model": {
+    "construction": "standard plus EVAL-010 correction with phase scales 1,1,1,0",
+    "sha256": "d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042"
+  },
+  "formal_evaluation": {
+    "conditions": {
+      "edax_version": "4.6",
+      "edax_level": 11,
+      "time_millis_per_move": 10000,
+      "threads": 8,
+      "opening_plies": 8,
+      "opening_seed": 20260902,
+      "opening_pairs": 50,
+      "games": 100,
+      "max_depth": 64,
+      "multi_probcut": false,
+      "opening_book": false,
+      "ponder": false
+    },
+    "integrity": {
+      "parsed_games": 100,
+      "distinct_openings": 50,
+      "two_games_per_opening": true,
+      "black_games": 50,
+      "white_games": 50,
+      "illegal_or_unfinished_games": 0
+    },
+    "result": {
+      "wins": 44,
+      "draws": 3,
+      "losses": 53,
+      "score_rate": 0.455,
+      "score_rate_95_ci": [
+        0.385,
+        0.525
+      ],
+      "mean_margin": -10.25,
+      "mean_margin_95_ci": [
+        -12.57,
+        -7.98975
+      ],
+      "black": {
+        "wins": 28,
+        "draws": 2,
+        "losses": 20,
+        "score_rate": 0.58,
+        "mean_margin": -7.8
+      },
+      "white": {
+        "wins": 16,
+        "draws": 1,
+        "losses": 33,
+        "score_rate": 0.33,
+        "mean_margin": -12.7
+      }
+    },
+    "bootstrap": {
+      "unit": "opening_pair",
+      "samples": 50000,
+      "seed": 20260902
+    },
+    "search_profile": {
+      "moves": 2567,
+      "average_move_millis": 6247.617,
+      "average_completed_depth": 13.07,
+      "nodes": 37131800777,
+      "nodes_per_second": 2315292,
+      "budget_stops": 1598,
+      "exact_moves": 969,
+      "wld_attempts": 967,
+      "wld_solutions": 967,
+      "book_moves": 0
+    },
+    "raw_log": "benchmark/results/eval-018-no-p3-edax-l11-t10000-formal-100-2026-07-23.txt",
+    "analysis": "benchmark/results/eval-018-no-p3-edax-l11-t10000-formal-100-analysis-2026-07-23.json"
+  },
+  "acceptance": {
+    "criterion": "opening-pair bootstrap lower 95% score bound must be at least 0.50",
+    "observed_lower_bound": 0.385,
+    "passed": false
+  },
+  "runtime_decision": {
+    "standard_model_changed": false,
+    "standard_model_sha256": "6e118c928729e003e89742d3b57fe6ed35fa9233a38dbe8af852041ebee39457",
+    "multi_probcut_changed": false,
+    "opening_book_changed": false,
+    "candidate_integration": "rejected"
+  },
+  "next_experiment": {
+    "id": "EVAL-019",
+    "candidate": "quantized antisymmetric interaction residual head for phases 1-2",
+    "primary_objectives": [
+      "sibling pairwise ranking",
+      "Edax top-1 move",
+      "selected-move regret"
+    ],
+    "controls": [
+      "same-split linear head",
+      "standard additive evaluator"
+    ],
+    "runtime_gates": {
+      "maximum_evaluation_slowdown": 0.15,
+      "maximum_10_second_depth_loss": 0.125
+    },
+    "edax_level_8_gate": {
+      "games": 100,
+      "minimum_score_rate": 0.45,
+      "minimum_mean_margin": -6.0
+    }
+  }
+}

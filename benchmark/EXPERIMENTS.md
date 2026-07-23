@@ -19,6 +19,7 @@
 - `specified`: 実装前の契約、既定値、試験条件を固定済み
 - `planned`: 実装前
 - `running`: 実装または測定中
+- `advanced`: 現段階のgateを通過し、後続実験で最終判定する候補
 - `accepted`: 基準版への統合対象
 - `rejected`: 結果を保存して統合しない
 - `measurement`: 実装を変更せず、固定した基準版の性能を再測定
@@ -52,6 +53,10 @@
 | EVAL-009 | rejected | `63582a8` | `codex/eval-009-phase-granularity` | Edax残差補正を4 phaseから8 phaseへ増やし、同一160 epochで比較 | `benchmark/results/eval-009-phase-granularity-2026-07-23.md` | MSE削減は4 phase 8.459%、8 phase 8.602%、差0.142pt。MAE差0.44% | 容量・形式2倍に見合わずruntime実装前に停止、analysis基盤は保存 |
 | EVAL-010 | held | `a43e7ea` | `codex/eval-010-converged-edax-correction` | 4-phase補正を160 epochへ収束させ、候補葉をEdax再採点するDAggerを3反復 | `benchmark/results/eval-010-converged-dagger-2026-07-23.md` | 反復2は現行へd6 56.5%・d8 56.0%、Edax L8 41.5%対37.5%。反復3は候補間59.5%でもEdax 26.5%へ崩壊 | 反復2を最良候補として保存するが+5pt進級線未達で葉評価へ統合せず、反復3は不採用 |
 | EVAL-015 | rejected | `751e459` | `codex/eval-015-robust-policy-mixture` | 3世代の探索葉を標準モデルへrebaseし、source-balanced・worst-source選択で単一補正を学習 | `benchmark/results/eval-015-robust-policy-mixture-2026-07-23.md` | 3分布の量子化test MSEを17.16〜18.35%削減。現行へd6 55.5%、d8 51.0%だがEdax L8は36.0%対現行37.5% | 混合学習基盤は保存、点ごとのEdax葉回帰は対局改善へ変換されずモデル不採用 |
+| EVAL-016 | advanced | `8fb91c9` | `codex/eval-016-combination-architecture-audit` | 過去候補の組合せと加算評価の構造限界を監査し、EVAL-010のphase 3だけを無効化 | `benchmark/results/eval-016-combination-architecture-audit-2026-07-23.md` | Edax L8 100局42.5%対標準37.5%、interaction headは葉MSEを加算型より改善 | phase 3無効化候補だけをL11へ進級、runtime統合は保留 |
+| EVAL-017 | advanced | `93927ca` | `codex/eval-017-candidate-mpc-recalibration` | phase 3無効化候補専用MPCを再校正し、L11 preflightを実施 | `benchmark/results/eval-017-candidate-mpc-and-l11-preflight-2026-07-23.md` | MPC onはL8で40.0%対off42.5%のため棄却。MPC offのL11 10局は65.0% | 候補をMPC offの正式L11 100局へ進級 |
+| EVAL-018 | rejected | `aac1d7f` | `codex/eval-018-l11-formal-gate` | phase 3無効化候補を大会条件Edax L11・50 opening pairで正式評価 | `benchmark/results/eval-018-l11-formal-gate-2026-07-23.md` | 44-3-53、score 45.5% CI `[38.5,52.5]%`、石差-10.25 CI `[-12.57,-7.99]`、白番33.0% | 事前gate不通過。標準モデルを変更せず候補を不採用 |
+| EVAL-019 | specified | EVAL-018 decision | `codex/eval-019-interaction-ranking` | phase 1-2へ小型量子化反対称interaction residualを追加し、兄弟手順位とregretを主目的に学習 | `benchmark/results/eval-018-l11-formal-gate-2026-07-23.md` | 速度、色別worst-group、固定深さ6/8、Edax L8の進級条件を事前固定 | 実装前 |
 | SEARCH-008 | accepted | `baseline/specialized-leaf-20260721` | `codex/exact-last-n` | 残り1〜4手を専用終盤solverで探索 | `benchmark/results/search-008-exact-last-n-2026-07-21.md` | 4T完全読み時間を12〜18空きで49〜62%短縮、不一致0/352 | 統合対象 |
 | SEARCH-009 | rejected | `baseline/exact-last-n-20260721` | `codex/two-way-tt` | 同じentry数で2-way bucket TTへ変更 | [experiment report](https://github.com/mesinoou/OthelloClient/blob/codex/two-way-tt/benchmark/results/search-009-two-way-tt-2026-07-21.md) | 4T node削減0.07〜0.57%、500 ms深度同値、不一致0/352 | 性能ゲート未達のため実験ブランチへ保存 |
 | SEARCH-010 | rejected | `baseline/exact-last-n-20260721` | `codex/enhanced-tt-cutoff` | 十分深い子局面TT boundによる安全なbeta cutoff | [experiment report](https://github.com/mesinoou/OthelloClient/blob/codex/enhanced-tt-cutoff/benchmark/results/search-010-enhanced-tt-cutoff-2026-07-21.md) | 4T node削減0.32〜1.54%、500 ms深度同値、不一致0/352 | 性能ゲート未達のため実験ブランチへ保存 |

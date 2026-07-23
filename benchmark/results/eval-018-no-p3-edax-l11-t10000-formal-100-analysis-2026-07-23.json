@@ -1,0 +1,17 @@
+{
+  "candidate": ".training\\benchmarks\\eval017-l11-formal\\match.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.455,
+  "score_rate_95_ci": [
+    0.385,
+    0.525
+  ],
+  "mean_margin": -10.25,
+  "mean_margin_95_ci": [
+    -12.57,
+    -7.989749999999986
+  ],
+  "bootstrap_samples": 50000,
+  "seed": 20260902
+}
