@@ -36,7 +36,9 @@ from training.export_java_model import (
 from training.java_model import (
     JavaEvaluationModel,
     adjust_java_model_bias,
+    evaluate_java_model_components,
     evaluate_java_model_features,
+    interpolate_java_models,
     merge_java_models,
     read_java_model,
     scale_java_model,
@@ -52,6 +54,7 @@ from training.train_model import (
     objective_values_and_gradient,
     pattern_table_key,
     swap_pattern_colors,
+    torch,
     wld_targets,
 )
 from training.train_search_correction import (
@@ -78,6 +81,10 @@ from training.generate_edax_teacher import (
 )
 from training.sample_ranking_positions import phase_ids
 from training.train_potential_mobility_correction import fit_phase_table
+from training.audit_evaluator_architecture import (
+    AntisymmetricHead,
+    balance_source_weights,
+)
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
@@ -537,6 +544,12 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
                 evaluate_java_model_features(loaded, features),
                 np.asarray((12,), dtype=np.int32),
             )
+            components = evaluate_java_model_components(loaded, features)
+            self.assertEqual((1, 16), components.shape)
+            self.assertEqual(
+                12,
+                int(components.sum()) + loaded.phase_bias[0],
+            )
 
             roundtrip_path = directory / "roundtrip.bin"
             write_java_model(loaded, roundtrip_path)
@@ -599,6 +612,37 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
                         adjusted_table,
                     )
 
+            blend_zero_path = directory / "blend-zero.bin"
+            interpolate_java_models(
+                output_path,
+                bias_path,
+                blend_zero_path,
+                0.0,
+            )
+            self.assertEqual(binary, blend_zero_path.read_bytes())
+            blend_one_path = directory / "blend-one.bin"
+            interpolate_java_models(
+                output_path,
+                bias_path,
+                blend_one_path,
+                1.0,
+            )
+            self.assertEqual(
+                bias_path.read_bytes(),
+                blend_one_path.read_bytes(),
+            )
+            blend_phase_path = directory / "blend-phase.bin"
+            interpolate_java_models(
+                output_path,
+                bias_path,
+                blend_phase_path,
+                1.0,
+                (1.0, 0.0, 0.0, 0.0),
+            )
+            blended_phase = read_java_model(blend_phase_path)
+            self.assertEqual(100, blended_phase.phase_bias[0])
+            self.assertEqual(0, blended_phase.phase_bias[1])
+
     def test_search_correction_maps_terminal_scores_to_margin_scale(self) -> None:
         scores = np.asarray(
             (100_012, -100_008, 640, -320, 0),
@@ -642,6 +686,30 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         self.assertEqual(2, len(metrics))
         for source in metrics:
             self.assertAlmostEqual(1.0, float(source["huber_ratio"]))
+
+    def test_architecture_audit_balances_sources_per_phase(self) -> None:
+        weights = balance_source_weights(
+            np.asarray((1.0, 2.0, 4.0, 8.0), dtype=np.float32),
+            np.asarray((0, 0, 0, 1), dtype=np.int8),
+        )
+        self.assertAlmostEqual(float(weights[:3].sum()), float(weights[3]))
+
+    @unittest.skipIf(torch is None, "PyTorch is not installed")
+    def test_interaction_head_is_color_antisymmetric(self) -> None:
+        torch.manual_seed(17)
+        head = AntisymmetricHead(3, 2, 4)
+        with torch.no_grad():
+            for parameter in head.parameters():
+                parameter.copy_(torch.randn_like(parameter))
+            signed = torch.randn(5, 3)
+            context = torch.randn(5, 2)
+            positive = head(signed, context)
+            negative = head(-signed, context)
+        np.testing.assert_allclose(
+            positive.numpy(),
+            -negative.numpy(),
+            atol=1.0e-6,
+        )
 
     def test_search_correction_combines_only_common_arrays(self) -> None:
         combined = concatenate_datasets(

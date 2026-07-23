@@ -345,7 +345,36 @@ python -u -m training.train_search_correction `
 
 `--recompute-static-scores`は各世代の保存済み`static_score`を使わず、全局面を`--base-model`で再評価する。`--source-balanced`はphase内で各datasetの総重みを等しくし、`--robust-selection`はvalidation Huber lossの基準比が最も悪いdatasetを基準にepochを選ぶ。EVAL-015では3分布すべてのtest MSEを改善したがEdax L8対局は改善しなかったため、混合学習基盤だけを残し、生成モデルは標準モデルへ統合していない。
 
-### 2.7 小規模確認
+### 2.7 評価モデルの混合と構造監査
+
+2つの互換Javaモデルを表ごとに線形補間する場合は次を使用する。`--phase-scales`を指定すると、補間量をphaseごとに変更できる。
+
+```powershell
+python -m training.blend_evaluation_models `
+  --base-model data/evaluation-tables.bin `
+  --candidate-model .training/models/candidate/evaluation-tables.bin `
+  --output-dir .training/models/blended `
+  --alpha 0.25 `
+  --phase-scales 1,1,1,0 `
+  --overwrite
+```
+
+現行の加算表を再重み付けする線形補正と、表出力・盤面全体特徴の条件付き相互作用を表現する小型反対称MLPを比較する場合は次を使用する。これは分析専用であり、Java候補は出力しない。
+
+```powershell
+python -u -m training.audit_evaluator_architecture `
+  --dataset-dir .training/datasets/edax-search-evaluation-full-l9 `
+  --extra-dataset-dir .training/datasets/eval-010-iter2-l9 `
+  --extra-dataset-dir .training/datasets/eval-010-iter3-l9 `
+  --base-model data/evaluation-tables.bin `
+  --output-dir .training/models/architecture-audit `
+  --device cuda `
+  --overwrite
+```
+
+入力は16個のJava表出力、7個の符号付き盤面特徴、3個の色不変contextである。MLP出力は色交換した2回のforwardの差から作り、評価値の色反対称性を構造的に保証する。checkpointはphaseごとに最悪dataset sourceのvalidation Huber比で選ぶ。
+
+### 2.8 小規模確認
 
 ```powershell
 python -m training.build_corpus `

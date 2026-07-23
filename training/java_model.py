@@ -169,6 +169,24 @@ def evaluate_java_model_features(
     data: dict[str, np.ndarray],
 ) -> np.ndarray:
     """Evaluate materialized features exactly as LearnedEvaluator does."""
+    components = evaluate_java_model_components(model, data)
+    phases = np.searchsorted(
+        np.asarray(model.phase_starts[1:], dtype=np.int16),
+        data["ply"].astype(np.int16),
+        side="right",
+    )
+    scores = components.sum(axis=1, dtype=np.int64)
+    scores += np.asarray(model.phase_bias, dtype=np.int64)[phases]
+    if model.score_divisor != 1:
+        scores = np.trunc(scores / model.score_divisor).astype(np.int64)
+    return scores.astype(np.int32)
+
+
+def evaluate_java_model_components(
+    model: JavaEvaluationModel,
+    data: dict[str, np.ndarray],
+) -> np.ndarray:
+    """Return each runtime table's raw contribution before bias/division."""
     required = {
         "ply",
         *(name for name, _ in PATTERN_FEATURE_SLICES),
@@ -194,7 +212,7 @@ def evaluate_java_model_features(
         data["ply"].astype(np.int16),
         side="right",
     )
-    scores = np.empty(count, dtype=np.int64)
+    components = np.empty((count, TABLE_COUNT), dtype=np.int64)
     auxiliary_indices = (
         data["mobility_own"].astype(np.int64) * 65
         + data["mobility_opponent"].astype(np.int64),
@@ -222,35 +240,33 @@ def evaluate_java_model_features(
         + 32,
     )
 
-    for phase, (bias, tables) in enumerate(
-        zip(model.phase_bias, model.tables, strict=True)
-    ):
+    for phase, tables in enumerate(model.tables):
         rows = np.flatnonzero(phases == phase)
-        phase_scores = np.full(len(rows), bias, dtype=np.int64)
-        for table, (name, columns) in zip(
-            tables[: len(PATTERN_FEATURE_SLICES)],
-            PATTERN_FEATURE_SLICES,
-            strict=True,
+        for table_index, (table, (name, columns)) in enumerate(
+            zip(
+                tables[: len(PATTERN_FEATURE_SLICES)],
+                PATTERN_FEATURE_SLICES,
+                strict=True,
+            )
         ):
             pattern_indices = data[name][rows, columns].astype(
                 np.int64,
                 copy=False,
             )
-            phase_scores += table[pattern_indices].sum(
+            components[rows, table_index] = table[pattern_indices].sum(
                 axis=1,
                 dtype=np.int64,
             )
-        for table, table_indices in zip(
-            tables[len(PATTERN_FEATURE_SLICES) :],
-            auxiliary_indices,
-            strict=True,
+        for auxiliary_index, (table, table_indices) in enumerate(
+            zip(
+                tables[len(PATTERN_FEATURE_SLICES) :],
+                auxiliary_indices,
+                strict=True,
+            ),
+            start=len(PATTERN_FEATURE_SLICES),
         ):
-            phase_scores += table[table_indices[rows]]
-        scores[rows] = phase_scores
-
-    if model.score_divisor != 1:
-        scores = np.trunc(scores / model.score_divisor).astype(np.int64)
-    return scores.astype(np.int32)
+            components[rows, auxiliary_index] = table[table_indices[rows]]
+    return components
 
 
 def write_java_model(model: JavaEvaluationModel, path: Path) -> dict[str, int]:
@@ -417,6 +433,72 @@ def scale_java_model(
         ),
     )
     return write_java_model(scaled, output_path)
+
+
+def interpolate_java_models(
+    base_path: Path,
+    candidate_path: Path,
+    output_path: Path,
+    alpha: float,
+    phase_scales: tuple[float, ...] | None = None,
+) -> dict[str, int]:
+    """Interpolate two compatible runtime models table by table."""
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("interpolation alpha must be between 0 and 1")
+    base = read_java_model(base_path)
+    candidate = read_java_model(candidate_path)
+    if base.phase_starts != candidate.phase_starts:
+        raise ValueError("model phase starts differ")
+    if base.score_scale != candidate.score_scale:
+        raise ValueError("model score scales differ")
+    if base.score_divisor != 1 or candidate.score_divisor != 1:
+        raise ValueError("model interpolation requires score divisor 1")
+    if phase_scales is None:
+        phase_scales = (1.0,) * PHASE_COUNT
+    if len(phase_scales) != PHASE_COUNT:
+        raise ValueError("phase scales must contain four values")
+    if any(not 0.0 <= value <= 1.0 for value in phase_scales):
+        raise ValueError("phase scales must be between 0 and 1")
+
+    factors = tuple(alpha * value for value in phase_scales)
+    phase_bias = tuple(
+        int(np.rint(left + factor * (right - left)))
+        for left, right, factor in zip(
+            base.phase_bias,
+            candidate.phase_bias,
+            factors,
+            strict=True,
+        )
+    )
+    phases = []
+    for base_tables, candidate_tables, factor in zip(
+        base.tables,
+        candidate.tables,
+        factors,
+        strict=True,
+    ):
+        tables = []
+        for left, right in zip(
+            base_tables,
+            candidate_tables,
+            strict=True,
+        ):
+            blended = np.rint(
+                left.astype(np.float64)
+                + factor
+                * (right.astype(np.float64) - left.astype(np.float64))
+            )
+            tables.append(blended.astype(np.int16))
+        phases.append(tuple(tables))
+
+    model = JavaEvaluationModel(
+        phase_starts=base.phase_starts,
+        score_scale=base.score_scale,
+        score_divisor=1,
+        phase_bias=phase_bias,
+        tables=tuple(phases),
+    )
+    return write_java_model(model, output_path)
 
 
 def adjust_java_model_bias(
