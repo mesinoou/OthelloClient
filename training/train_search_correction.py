@@ -13,7 +13,11 @@ from typing import Any
 import numpy as np
 
 from training.export_java_model import TERMINAL_SCORE, export_java_model
-from training.java_model import merge_java_models, read_java_model
+from training.java_model import (
+    evaluate_java_model_features,
+    merge_java_models,
+    read_java_model,
+)
 from training.train_model import (
     AUXILIARY_BRANCH_NAMES,
     BRANCH_NAMES,
@@ -38,6 +42,13 @@ def parse_args() -> argparse.Namespace:
         default=Path(".training/datasets/search-evaluation-v1"),
     )
     parser.add_argument(
+        "--extra-dataset-dir",
+        type=Path,
+        action="append",
+        default=[],
+        help="additional search-policy dataset; may be repeated",
+    )
+    parser.add_argument(
         "--base-model",
         type=Path,
         default=Path("data/evaluation-tables.bin"),
@@ -49,12 +60,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--epochs", type=int, default=80)
     parser.add_argument("--patience", type=int, default=10)
+    parser.add_argument("--progress-interval", type=int, default=5)
     parser.add_argument("--learning-rate", type=float, default=2.0e-4)
     parser.add_argument("--huber-delta", type=float, default=0.10)
     parser.add_argument("--output-anchor", type=float, default=0.10)
     parser.add_argument("--l2", type=float, default=1.0e-6)
     parser.add_argument("--residual-clip", type=float, default=1.0)
     parser.add_argument("--occurrence-weight-cap", type=float, default=8.0)
+    parser.add_argument(
+        "--recompute-static-scores",
+        action="store_true",
+        help="evaluate every sample with --base-model before fitting residuals",
+    )
+    parser.add_argument(
+        "--source-balanced",
+        action="store_true",
+        help="give every dataset source equal total training weight",
+    )
+    parser.add_argument(
+        "--robust-selection",
+        action="store_true",
+        help="select epochs by the worst validation loss ratio over sources",
+    )
     parser.add_argument(
         "--teacher",
         choices=("deep-search", "edax"),
@@ -104,6 +131,18 @@ def load_dataset(path: Path) -> dict[str, np.ndarray]:
         return {name: archive[name] for name in archive.files}
 
 
+def concatenate_datasets(
+    datasets: list[dict[str, np.ndarray]],
+) -> dict[str, np.ndarray]:
+    if not datasets:
+        raise ValueError("at least one dataset is required")
+    common = set(datasets[0]).intersection(*(set(data) for data in datasets[1:]))
+    return {
+        name: np.concatenate([data[name] for data in datasets], axis=0)
+        for name in sorted(common)
+    }
+
+
 def teacher_scores_normalized(
     scores: np.ndarray,
     score_scale: int,
@@ -144,9 +183,18 @@ def sample_weights(
     data: dict[str, np.ndarray],
     indices: np.ndarray,
     cap: float,
+    source_balanced: bool = False,
 ) -> np.ndarray:
     weights = np.sqrt(data["occurrences"][indices].astype(np.float32))
     weights = np.minimum(weights, cap)
+    if source_balanced:
+        if "_source" not in data:
+            raise ValueError("source-balanced weights require source ids")
+        sources = data["_source"][indices]
+        for source in np.unique(sources):
+            selected = sources == source
+            weights[selected] /= weights[selected].mean()
+            weights[selected] /= np.count_nonzero(selected)
     return weights / weights.mean()
 
 
@@ -256,6 +304,53 @@ def correction_metrics(
     }
 
 
+def source_correction_metrics(
+    correction: np.ndarray,
+    target: np.ndarray,
+    weights: np.ndarray,
+    sources: np.ndarray,
+    delta: float,
+) -> list[dict[str, float | int]]:
+    difference = correction.reshape(-1) - target.reshape(-1)
+    baseline_difference = -target.reshape(-1)
+
+    def huber(values: np.ndarray) -> np.ndarray:
+        absolute = np.abs(values)
+        return np.where(
+            absolute <= delta,
+            0.5 * values**2,
+            delta * (absolute - 0.5 * delta),
+        )
+
+    results = []
+    for source in np.unique(sources):
+        selected = sources == source
+        baseline = float(
+            np.average(
+                huber(baseline_difference[selected]),
+                weights=weights[selected],
+            )
+        )
+        corrected = float(
+            np.average(huber(difference[selected]), weights=weights[selected])
+        )
+        results.append(
+            {
+                "source": int(source),
+                "samples": int(np.count_nonzero(selected)),
+                "baseline_huber": baseline,
+                "corrected_huber": corrected,
+                "huber_ratio": corrected / baseline if baseline > 0.0 else 1.0,
+                **correction_metrics(
+                    correction.reshape(-1)[selected],
+                    target.reshape(-1)[selected],
+                    weights[selected],
+                ),
+            }
+        )
+    return results
+
+
 def train_phase(
     phase: int,
     train: dict[str, np.ndarray],
@@ -300,11 +395,13 @@ def train_phase(
         train,
         train_indices,
         args.occurrence_weight_cap,
+        args.source_balanced,
     )
     validation_weights_np = sample_weights(
         validation,
         validation_indices,
         args.occurrence_weight_cap,
+        args.source_balanced,
     )
     train_target = torch.as_tensor(train_target_np, device=device)
     validation_target = torch.as_tensor(validation_target_np, device=device)
@@ -349,27 +446,57 @@ def train_phase(
         model.eval()
         with torch.no_grad():
             validation_prediction = model(validation_batch)
-            validation_loss = weighted_huber(
+            validation_fit_loss = weighted_huber(
                 validation_prediction,
                 validation_target,
                 validation_weights,
                 args.huber_delta,
             )
+            validation_prediction_np = (
+                validation_prediction[:, 0].detach().cpu().numpy()
+            )
             metrics = correction_metrics(
-                validation_prediction[:, 0].detach().cpu().numpy(),
+                validation_prediction_np,
                 validation_target_np[:, 0],
                 validation_weights_np,
             )
+            source_metrics = source_correction_metrics(
+                validation_prediction_np,
+                validation_target_np[:, 0],
+                validation_weights_np,
+                validation["_source"][validation_indices],
+                args.huber_delta,
+            )
+            if args.robust_selection:
+                validation_objective = max(
+                    metric["huber_ratio"] for metric in source_metrics
+                )
+            else:
+                validation_objective = float(validation_fit_loss.item())
         result = {
             "epoch": epoch,
             "train_objective": float(loss.item()),
             "train_fit_loss": float(fit_loss.item()),
-            "validation_objective": float(validation_loss.item()),
+            "validation_objective": validation_objective,
+            "validation_fit_loss": float(validation_fit_loss.item()),
+            "validation_sources": source_metrics,
             **metrics,
         }
         history.append(result)
-        if epoch == 1 or epoch % 5 == 0:
-            print(f"phase {phase}: {json.dumps(result)}")
+        if epoch == 1 or epoch % args.progress_interval == 0:
+            if args.robust_selection:
+                ratios = ",".join(
+                    f"s{metric['source']}={metric['huber_ratio']:.4f}"
+                    for metric in source_metrics
+                )
+                print(
+                    f"phase {phase} epoch {epoch}: "
+                    f"train={result['train_objective']:.8f} "
+                    f"worst_ratio={validation_objective:.6f} "
+                    f"source_ratios=[{ratios}]"
+                )
+            else:
+                print(f"phase {phase}: {json.dumps(result)}")
         if result["validation_objective"] < best_loss - 1.0e-7:
             best_loss = result["validation_objective"]
             best_state = {
@@ -418,12 +545,77 @@ def evaluate_test(
             test,
             indices,
             args.occurrence_weight_cap,
+            args.source_balanced,
         )
         results.append(
             {
                 "phase": phase,
                 "samples": len(indices),
                 **correction_metrics(prediction[:, 0], target[:, 0], weights),
+            }
+        )
+    return results
+
+
+def evaluate_test_by_source(
+    models: list[PatternModel],
+    test: dict[str, np.ndarray],
+    args: argparse.Namespace,
+    score_scale: int,
+    source_names: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    results = []
+    for source, source_name in enumerate(source_names):
+        phases = []
+        for phase, model in enumerate(models):
+            indices = np.flatnonzero(
+                (test["_source"] == source) & (test["phase"] == phase)
+            )
+            prediction, _ = model.forward(test, indices, cache=False)
+            target = residual_targets(
+                test,
+                indices,
+                score_scale,
+                args.residual_clip,
+                args.teacher,
+            )
+            weights = sample_weights(
+                test,
+                indices,
+                args.occurrence_weight_cap,
+                False,
+            )
+            phases.append(
+                {
+                    "phase": phase,
+                    "samples": len(indices),
+                    **correction_metrics(
+                        prediction[:, 0],
+                        target[:, 0],
+                        weights,
+                    ),
+                }
+            )
+        baseline_sse = sum(
+            phase["baseline_mse"] * phase["samples"] for phase in phases
+        )
+        corrected_sse = sum(
+            phase["corrected_mse"] * phase["samples"] for phase in phases
+        )
+        samples = sum(phase["samples"] for phase in phases)
+        results.append(
+            {
+                "source": source,
+                "name": source_name,
+                "samples": samples,
+                "baseline_mse": baseline_sse / samples,
+                "corrected_mse": corrected_sse / samples,
+                "mse_reduction": (
+                    1.0 - corrected_sse / baseline_sse
+                    if baseline_sse > 0.0
+                    else 0.0
+                ),
+                "phases": phases,
             }
         )
     return results
@@ -440,8 +632,14 @@ def resolve_device(name: str) -> Any:
 
 
 def validate_args(args: argparse.Namespace) -> None:
-    if args.epochs < 1 or args.patience < 1:
-        raise ValueError("epochs and patience must be positive")
+    if (
+        args.epochs < 1
+        or args.patience < 1
+        or args.progress_interval < 1
+    ):
+        raise ValueError(
+            "epochs, patience, and progress interval must be positive"
+        )
     if args.learning_rate <= 0.0:
         raise ValueError("learning rate must be positive")
     if args.huber_delta <= 0.0 or args.residual_clip <= 0.0:
@@ -455,6 +653,10 @@ def validate_args(args: argparse.Namespace) -> None:
         and args.max_samples_per_phase < 1
     ):
         raise ValueError("max samples per phase must be positive")
+    if args.robust_selection and not args.source_balanced:
+        raise ValueError("robust selection requires source-balanced weights")
+    if args.robust_selection and not args.extra_dataset_dir:
+        raise ValueError("robust selection requires multiple datasets")
 
 
 def main() -> int:
@@ -486,9 +688,28 @@ def main() -> int:
         torch.cuda.manual_seed_all(args.seed)
     print(f"search correction training device: {device}")
 
-    train = load_dataset(args.dataset_dir / "train.npz")
-    validation = load_dataset(args.dataset_dir / "validation.npz")
-    test = load_dataset(args.dataset_dir / "test.npz")
+    dataset_dirs = (args.dataset_dir, *args.extra_dataset_dir)
+    source_names = tuple(path.name for path in dataset_dirs)
+    if len(set(source_names)) != len(source_names):
+        raise ValueError("dataset directory names must be unique")
+    split_datasets: dict[str, list[dict[str, np.ndarray]]] = {
+        split: [] for split in ("train", "validation", "test")
+    }
+    for source, dataset_dir in enumerate(dataset_dirs):
+        print(f"loading source {source}: {dataset_dir}")
+        for split in split_datasets:
+            data = load_dataset(dataset_dir / f"{split}.npz")
+            if args.recompute_static_scores:
+                data["static_score"] = evaluate_java_model_features(base, data)
+            data["_source"] = np.full(
+                len(data["ply"]),
+                source,
+                dtype=np.int8,
+            )
+            split_datasets[split].append(data)
+    train = concatenate_datasets(split_datasets["train"])
+    validation = concatenate_datasets(split_datasets["validation"])
+    test = concatenate_datasets(split_datasets["test"])
     for data in (train, validation, test):
         apply_phase_starts(data, phase_starts)
     rng = np.random.default_rng(args.seed)
@@ -540,6 +761,13 @@ def main() -> int:
         )
         artifacts.extend((tables_path, correction_path, candidate_path))
     test_metrics = evaluate_test(models, test, args, base.score_scale)
+    test_metrics_by_source = evaluate_test_by_source(
+        models,
+        test,
+        args,
+        base.score_scale,
+        source_names,
+    )
 
     metadata = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -553,8 +781,20 @@ def main() -> int:
                 args.dataset_dir / "metadata.json"
             ),
         },
+        "datasets": [
+            {
+                "source": source,
+                "name": source_names[source],
+                "path": str(path),
+                "metadata_sha256": sha256_file(path / "metadata.json"),
+            }
+            for source, path in enumerate(dataset_dirs)
+        ],
         "arguments": vars(args) | {
             "dataset_dir": str(args.dataset_dir),
+            "extra_dataset_dir": [
+                str(path) for path in args.extra_dataset_dir
+            ],
             "base_model": str(args.base_model),
             "output_dir": str(args.output_dir),
         },
@@ -563,6 +803,7 @@ def main() -> int:
         "selections": selections,
         "histories": histories,
         "test_metrics": test_metrics,
+        "test_metrics_by_source": test_metrics_by_source,
         "quantization_clipped": clipped,
         "correction_export": correction_export,
         "candidate_export": candidate_export,

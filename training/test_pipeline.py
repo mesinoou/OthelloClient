@@ -36,6 +36,7 @@ from training.export_java_model import (
 from training.java_model import (
     JavaEvaluationModel,
     adjust_java_model_bias,
+    evaluate_java_model_features,
     merge_java_models,
     read_java_model,
     scale_java_model,
@@ -55,7 +56,10 @@ from training.train_model import (
 )
 from training.train_search_correction import (
     apply_phase_starts,
+    concatenate_datasets,
     parse_phase_starts,
+    sample_weights,
+    source_correction_metrics,
     teacher_scores_normalized,
     zero_output_layers,
 )
@@ -511,6 +515,29 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             self.assertEqual(1, result["score_divisor"])
 
             loaded = read_java_model(output_path)
+            features: dict[str, np.ndarray] = {
+                "ply": np.asarray((10,), dtype=np.uint8),
+                "mobility_own": np.zeros(1, dtype=np.int8),
+                "mobility_opponent": np.zeros(1, dtype=np.int8),
+                "frontier_own": np.zeros(1, dtype=np.int8),
+                "frontier_opponent": np.zeros(1, dtype=np.int8),
+                "disc_difference": np.zeros(1, dtype=np.int8),
+                "corner_difference": np.zeros(1, dtype=np.int8),
+                "corner_move_difference": np.zeros(1, dtype=np.int8),
+                "stable_edge_difference": np.zeros(1, dtype=np.int8),
+                "parity_access_difference": np.zeros(1, dtype=np.int8),
+            }
+            for name, group in PATTERN_GROUPS.items():
+                features[name] = np.zeros(
+                    (1, group.instances),
+                    dtype=np.int32,
+                )
+            features["diagonal"][0, 0] = 1
+            np.testing.assert_array_equal(
+                evaluate_java_model_features(loaded, features),
+                np.asarray((12,), dtype=np.int32),
+            )
+
             roundtrip_path = directory / "roundtrip.bin"
             write_java_model(loaded, roundtrip_path)
             self.assertEqual(binary, roundtrip_path.read_bytes())
@@ -594,6 +621,43 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             last = max(layers)
             self.assertFalse(model.parameters[f"{branch}_w{last}"].any())
             self.assertFalse(model.parameters[f"{branch}_b{last}"].any())
+
+    def test_search_correction_balances_dataset_sources(self) -> None:
+        data = {
+            "occurrences": np.asarray((1, 4, 9, 16), dtype=np.uint32),
+            "_source": np.asarray((0, 0, 0, 1), dtype=np.int8),
+        }
+        indices = np.arange(4)
+        weights = sample_weights(data, indices, 8.0, True)
+        self.assertAlmostEqual(float(weights[:3].sum()), float(weights[3]))
+
+        target = np.asarray((0.2, -0.1, 0.3, -0.2), dtype=np.float32)
+        metrics = source_correction_metrics(
+            np.zeros(4, dtype=np.float32),
+            target,
+            weights,
+            data["_source"],
+            0.1,
+        )
+        self.assertEqual(2, len(metrics))
+        for source in metrics:
+            self.assertAlmostEqual(1.0, float(source["huber_ratio"]))
+
+    def test_search_correction_combines_only_common_arrays(self) -> None:
+        combined = concatenate_datasets(
+            [
+                {
+                    "required": np.asarray((1, 2)),
+                    "optional": np.asarray((3, 4)),
+                },
+                {"required": np.asarray((5,))},
+            ]
+        )
+        self.assertEqual({"required"}, set(combined))
+        np.testing.assert_array_equal(
+            combined["required"],
+            np.asarray((1, 2, 5)),
+        )
 
     def test_quantized_evaluation_applies_java_score_divisor(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

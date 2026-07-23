@@ -323,6 +323,28 @@ python -u -m training.train_search_correction `
 
 EVAL-010では4段階補正を160 epochまで収束させ、候補自身の葉を再採点する反復を行った。反復2は固定深さで現行を上回り、Edax L8も現行37.5%に対して41.5%だったが、事前のL11進級線+5 pointには届かなかった。反復3は候補間対局に勝ちながらEdax L8で26.5%へ崩壊したため、DAgger反復は単調な世代更新として扱わない。詳細は`benchmark/results/eval-010-converged-dagger-2026-07-23.md`を参照する。
 
+異なる探索方策が生成した葉を一つの補正器へ混合する場合は、追加データセット、基準評価値の再計算、source-balanced学習、最悪sourceによるcheckpoint選択を明示する。
+
+```powershell
+python -u -m training.train_search_correction `
+  --dataset-dir .training/datasets/edax-search-evaluation-full-l9 `
+  --extra-dataset-dir .training/datasets/eval-010-iter2-l9 `
+  --extra-dataset-dir .training/datasets/eval-010-iter3-l9 `
+  --base-model data/evaluation-tables.bin `
+  --output-dir .training/models/robust-policy-mixture `
+  --teacher edax `
+  --recompute-static-scores `
+  --source-balanced `
+  --robust-selection `
+  --epochs 640 `
+  --patience 60 `
+  --progress-interval 20 `
+  --device cuda `
+  --overwrite
+```
+
+`--recompute-static-scores`は各世代の保存済み`static_score`を使わず、全局面を`--base-model`で再評価する。`--source-balanced`はphase内で各datasetの総重みを等しくし、`--robust-selection`はvalidation Huber lossの基準比が最も悪いdatasetを基準にepochを選ぶ。EVAL-015では3分布すべてのtest MSEを改善したがEdax L8対局は改善しなかったため、混合学習基盤だけを残し、生成モデルは標準モデルへ統合していない。
+
 ### 2.7 小規模確認
 
 ```powershell

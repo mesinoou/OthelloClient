@@ -28,6 +28,18 @@ TABLE_INSTANCES = tuple(
     instances for _, _, instances, _ in PATTERN_TABLES
 ) + (1,) * len(AUXILIARY_TABLES)
 
+PATTERN_FEATURE_SLICES = (
+    ("diagonal", slice(0, 2)),
+    ("edge2x", slice(0, 4)),
+    ("corner", slice(0, 8)),
+    ("line8", slice(0, 4)),
+    ("line8", slice(8, 12)),
+    ("line8", slice(16, 20)),
+    ("short_diagonal", slice(0, 4)),
+    ("short_diagonal", slice(8, 12)),
+    ("corner3x3", slice(0, 8)),
+)
+
 
 @dataclass(frozen=True)
 class JavaEvaluationModel:
@@ -150,6 +162,95 @@ def model_bound(model: JavaEvaluationModel) -> int:
             bound += int(np.abs(table.astype(np.int32)).max()) * instances
         maximum = max(maximum, bound)
     return maximum
+
+
+def evaluate_java_model_features(
+    model: JavaEvaluationModel,
+    data: dict[str, np.ndarray],
+) -> np.ndarray:
+    """Evaluate materialized features exactly as LearnedEvaluator does."""
+    required = {
+        "ply",
+        *(name for name, _ in PATTERN_FEATURE_SLICES),
+        "mobility_own",
+        "mobility_opponent",
+        "frontier_own",
+        "frontier_opponent",
+        "disc_difference",
+        "corner_difference",
+        "corner_move_difference",
+        "stable_edge_difference",
+        "parity_access_difference",
+    }
+    missing = required - set(data)
+    if missing:
+        raise ValueError(
+            f"materialized features are missing arrays {sorted(missing)}"
+        )
+
+    count = len(data["ply"])
+    phases = np.searchsorted(
+        np.asarray(model.phase_starts[1:], dtype=np.int16),
+        data["ply"].astype(np.int16),
+        side="right",
+    )
+    scores = np.empty(count, dtype=np.int64)
+    auxiliary_indices = (
+        data["mobility_own"].astype(np.int64) * 65
+        + data["mobility_opponent"].astype(np.int64),
+        data["frontier_own"].astype(np.int64) * 65
+        + data["frontier_opponent"].astype(np.int64),
+        np.clip(data["disc_difference"].astype(np.int64), -64, 64) + 64,
+        np.clip(data["corner_difference"].astype(np.int64), -4, 4) + 4,
+        np.clip(
+            data["corner_move_difference"].astype(np.int64),
+            -4,
+            4,
+        )
+        + 4,
+        np.clip(
+            data["stable_edge_difference"].astype(np.int64),
+            -28,
+            28,
+        )
+        + 28,
+        np.clip(
+            data["parity_access_difference"].astype(np.int64),
+            -32,
+            32,
+        )
+        + 32,
+    )
+
+    for phase, (bias, tables) in enumerate(
+        zip(model.phase_bias, model.tables, strict=True)
+    ):
+        rows = np.flatnonzero(phases == phase)
+        phase_scores = np.full(len(rows), bias, dtype=np.int64)
+        for table, (name, columns) in zip(
+            tables[: len(PATTERN_FEATURE_SLICES)],
+            PATTERN_FEATURE_SLICES,
+            strict=True,
+        ):
+            pattern_indices = data[name][rows, columns].astype(
+                np.int64,
+                copy=False,
+            )
+            phase_scores += table[pattern_indices].sum(
+                axis=1,
+                dtype=np.int64,
+            )
+        for table, table_indices in zip(
+            tables[len(PATTERN_FEATURE_SLICES) :],
+            auxiliary_indices,
+            strict=True,
+        ):
+            phase_scores += table[table_indices[rows]]
+        scores[rows] = phase_scores
+
+    if model.score_divisor != 1:
+        scores = np.trunc(scores / model.score_divisor).astype(np.int64)
+    return scores.astype(np.int32)
 
 
 def write_java_model(model: JavaEvaluationModel, path: Path) -> dict[str, int]:
