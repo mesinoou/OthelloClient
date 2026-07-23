@@ -1,0 +1,50 @@
+evaluation match
+model=learned-table-v1 (scoreScale=6400, divisor=1, bound=75962, path=D:\�̓_���|�[�g\OthelloClient\data\evaluation-tables.bin)
+moveOrdering=learned-table-v1 (scoreScale=6400, divisor=1, bound=77594, path=D:\�̓_���|�[�g\OthelloClient\.training\models\eval-010-edax-l9-iter2-a050-e160\evaluation-tables.bin), minimumDepth=7
+opponent=MODEL, model=learned-table-v1 (scoreScale=6400, divisor=1, bound=75962, path=D:\�̓_���|�[�g\OthelloClient\data\evaluation-tables.bin)
+pairs=20, games=40, openingPlies=8, openingSeed=20260726
+searchTimeMillis=30000, maxDepth=8, threads=1, ponderMillis=0, multiProbCut=off(model-match), openingBook=off
+game=1/40 opening=1 learned=black result=LOSS margin=-6 discs=29-35 moves=60 elapsed=1.027s
+game=2/40 opening=1 learned=white result=WIN margin=+6 discs=29-35 moves=60 elapsed=0.947s
+game=3/40 opening=2 learned=black result=WIN margin=+18 discs=41-23 moves=60 elapsed=1.393s
+game=4/40 opening=2 learned=white result=LOSS margin=-18 discs=41-23 moves=60 elapsed=1.461s
+game=5/40 opening=3 learned=black result=WIN margin=+12 discs=38-26 moves=60 elapsed=1.537s
+game=6/40 opening=3 learned=white result=LOSS margin=-12 discs=38-26 moves=60 elapsed=1.526s
+game=7/40 opening=4 learned=black result=LOSS margin=-10 discs=27-37 moves=60 elapsed=1.034s
+game=8/40 opening=4 learned=white result=WIN margin=+10 discs=27-37 moves=60 elapsed=1.148s
+game=9/40 opening=5 learned=black result=LOSS margin=-4 discs=30-34 moves=60 elapsed=1.123s
+game=10/40 opening=5 learned=white result=WIN margin=+4 discs=30-34 moves=60 elapsed=1.090s
+game=11/40 opening=6 learned=black result=LOSS margin=-2 discs=31-33 moves=60 elapsed=1.398s
+game=12/40 opening=6 learned=white result=WIN margin=+2 discs=31-33 moves=60 elapsed=1.389s
+game=13/40 opening=7 learned=black result=LOSS margin=-14 discs=25-39 moves=60 elapsed=1.710s
+game=14/40 opening=7 learned=white result=WIN margin=+14 discs=25-39 moves=60 elapsed=1.666s
+game=15/40 opening=8 learned=black result=LOSS margin=-10 discs=27-37 moves=60 elapsed=1.755s
+game=16/40 opening=8 learned=white result=WIN margin=+10 discs=27-37 moves=60 elapsed=1.825s
+game=17/40 opening=9 learned=black result=WIN margin=+48 discs=56-8 moves=60 elapsed=0.828s
+game=18/40 opening=9 learned=white result=LOSS margin=-48 discs=56-8 moves=60 elapsed=0.809s
+game=19/40 opening=10 learned=black result=LOSS margin=-2 discs=31-33 moves=60 elapsed=1.672s
+game=20/40 opening=10 learned=white result=WIN margin=+2 discs=31-33 moves=60 elapsed=1.743s
+game=21/40 opening=11 learned=black result=WIN margin=+24 discs=44-20 moves=60 elapsed=1.329s
+game=22/40 opening=11 learned=white result=LOSS margin=-24 discs=44-20 moves=60 elapsed=1.427s
+game=23/40 opening=12 learned=black result=LOSS margin=-10 discs=27-37 moves=60 elapsed=1.326s
+game=24/40 opening=12 learned=white result=WIN margin=+10 discs=27-37 moves=60 elapsed=1.416s
+game=25/40 opening=13 learned=black result=LOSS margin=-22 discs=21-43 moves=60 elapsed=2.545s
+game=26/40 opening=13 learned=white result=WIN margin=+38 discs=13-51 moves=60 elapsed=2.375s
+game=27/40 opening=14 learned=black result=WIN margin=+12 discs=38-26 moves=60 elapsed=1.764s
+game=28/40 opening=14 learned=white result=LOSS margin=-12 discs=38-26 moves=60 elapsed=1.742s
+game=29/40 opening=15 learned=black result=WIN margin=+10 discs=37-27 moves=60 elapsed=1.174s
+game=30/40 opening=15 learned=white result=LOSS margin=-10 discs=37-27 moves=60 elapsed=1.179s
+game=31/40 opening=16 learned=black result=WIN margin=+14 discs=39-25 moves=60 elapsed=1.113s
+game=32/40 opening=16 learned=white result=LOSS margin=-14 discs=39-25 moves=60 elapsed=1.127s
+game=33/40 opening=17 learned=black result=WIN margin=+10 discs=37-27 moves=60 elapsed=2.497s
+game=34/40 opening=17 learned=white result=LOSS margin=-10 discs=37-27 moves=60 elapsed=2.648s
+game=35/40 opening=18 learned=black result=LOSS margin=-16 discs=24-40 moves=60 elapsed=2.255s
+game=36/40 opening=18 learned=white result=WIN margin=+16 discs=24-40 moves=60 elapsed=2.202s
+game=37/40 opening=19 learned=black result=LOSS margin=-63 discs=0-63 moves=59 elapsed=1.088s
+game=38/40 opening=19 learned=white result=WIN margin=+63 discs=0-63 moves=59 elapsed=1.100s
+game=39/40 opening=20 learned=black result=LOSS margin=-4 discs=30-34 moves=60 elapsed=0.750s
+game=40/40 opening=20 learned=white result=WIN margin=+4 discs=30-34 moves=60 elapsed=0.724s
+summary
+games=40 wins=20 draws=0 losses=20 scoreRate=50.00% averageMargin=+0.40 elapsed=58.864s
+learned: moves=1039 avgMove=27.682ms avgDepth=7.47 nodes=38394431 nodesPerSecond=1334909 budgetStops=0 exactMoves=159 initialTtHits=960 wldAttempts=159 wldSolutions=159 wldNodes=4020 wldSeconds=0.002
+opponentModel: moves=1039 avgMove=28.868ms avgDepth=7.47 nodes=40395248 nodesPerSecond=1346785 budgetStops=0 exactMoves=159 initialTtHits=960 wldAttempts=159 wldSolutions=159 wldNodes=4072 wldSeconds=0.002

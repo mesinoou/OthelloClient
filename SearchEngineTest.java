@@ -19,6 +19,7 @@ public final class SearchEngineTest {
         testStabilityBounds();
         testStabilityCutoffMatchesBaseline();
         testTranspositionTableConsistency();
+        testLearnedMoveOrdering();
         testRootProbeResearchDecision();
         testLateMoveReductionEligibility();
         testLateMoveReductionActivation();
@@ -92,6 +93,89 @@ public final class SearchEngineTest {
             -Evaluator.WIN_SCORE,
             SearchEngine.wldScoreForDifference(-1),
             "WLD loss"
+        );
+    }
+
+    private static void testLearnedMoveOrdering() {
+        PositionToMove sample = createMidgame(20);
+        CountingOrderingEvaluator disabled = new CountingOrderingEvaluator();
+        SearchEngine belowThreshold = moveOrderingEngine(disabled, 8);
+        SearchResult belowResult = belowThreshold.search(
+            sample.position,
+            sample.color,
+            new SearchLimits(30_000L, 7, 1)
+        );
+        assertLegalBestMove(
+            sample.position,
+            sample.color,
+            belowResult.bestSquare()
+        );
+        assertEquals(0, disabled.calls, "ordering below threshold");
+
+        CountingOrderingEvaluator ordering = new CountingOrderingEvaluator();
+        SearchEngine baseline = new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 16),
+            true,
+            0,
+            false
+        );
+        SearchEngine ordered = moveOrderingEngine(ordering, 5);
+        SearchLimits limits = new SearchLimits(30_000L, 7, 1);
+        SearchResult expected = baseline.search(
+            sample.position,
+            sample.color,
+            limits
+        );
+        SearchResult actual = ordered.search(
+            sample.position,
+            sample.color,
+            limits
+        );
+        assertEquals(
+            expected.completedDepth(),
+            actual.completedDepth(),
+            "learned ordering completed depth"
+        );
+        assertEquals(
+            expected.score(),
+            actual.score(),
+            "learned ordering exact score"
+        );
+        assertLegalBestMove(
+            sample.position,
+            sample.color,
+            actual.bestSquare()
+        );
+        int rootMoves = BitBoard.count(
+            BitBoard.legalMoves(
+                sample.position.player(sample.color),
+                sample.position.opponent(sample.color)
+            )
+        );
+        if (ordering.calls <= rootMoves) {
+            throw new AssertionError(
+                "ordering evaluator was not used below root"
+            );
+        }
+    }
+
+    private static SearchEngine moveOrderingEngine(
+        PositionEvaluator ordering,
+        int minimumDepth
+    ) {
+        return new SearchEngine(
+            EVALUATOR,
+            new TranspositionTable(1 << 16),
+            true,
+            0,
+            false,
+            true,
+            true,
+            true,
+            true,
+            ordering,
+            minimumDepth
         );
     }
 
@@ -1183,6 +1267,30 @@ public final class SearchEngineTest {
         private PositionToMove(BitBoardPosition position, int color) {
             this.position = position;
             this.color = color;
+        }
+    }
+
+    private static final class CountingOrderingEvaluator
+        implements PositionEvaluator {
+
+        private int calls;
+
+        @Override
+        public int evaluate(long player, long opponent) {
+            calls++;
+            long mixed = player * 0x9E3779B97F4A7C15L
+                ^ Long.rotateLeft(opponent, 23);
+            return (int) (mixed ^ (mixed >>> 32));
+        }
+
+        @Override
+        public int terminalScore(long player, long opponent) {
+            return EVALUATOR.terminalScore(player, opponent);
+        }
+
+        @Override
+        public String description() {
+            return "counting-ordering-test";
         }
     }
 }

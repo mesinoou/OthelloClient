@@ -39,6 +39,10 @@ public final class EvaluationMatchRunner {
 
     private static void run(Settings settings) throws IOException {
         PositionEvaluator learned = LearnedEvaluator.load(settings.modelPath);
+        PositionEvaluator orderingEvaluator =
+            settings.orderingModelPath == null
+                ? null
+                : LearnedEvaluator.load(settings.orderingModelPath);
         PositionEvaluator modelOpponent = settings.opponent == Opponent.MODEL
             ? LearnedEvaluator.load(settings.opponentModelPath)
             : null;
@@ -51,6 +55,13 @@ public final class EvaluationMatchRunner {
 
         System.out.println("evaluation match");
         System.out.println("model=" + learned.description());
+        System.out.println(
+            "moveOrdering=" + (orderingEvaluator == null
+                ? "off"
+                : orderingEvaluator.description()
+                    + ", minimumDepth="
+                    + settings.orderingMinimumDepth)
+        );
         System.out.println(
             "opponent=" + settings.opponent
                 + (settings.opponent == Opponent.EDAX
@@ -87,6 +98,7 @@ public final class EvaluationMatchRunner {
                 GameRun run = playOneGame(
                     settings,
                     learned,
+                    orderingEvaluator,
                     modelOpponent,
                     opening,
                     learnedColor
@@ -118,6 +130,7 @@ public final class EvaluationMatchRunner {
     private static GameRun playOneGame(
         Settings settings,
         PositionEvaluator learnedEvaluator,
+        PositionEvaluator orderingEvaluator,
         PositionEvaluator modelOpponent,
         Opening opening,
         int learnedColor
@@ -126,6 +139,7 @@ public final class EvaluationMatchRunner {
             "learned",
             learnedColor,
             learnedEvaluator,
+            orderingEvaluator,
             settings
         );
         MatchPlayer opponent = createOpponent(
@@ -203,6 +217,7 @@ public final class EvaluationMatchRunner {
                 "handcrafted",
                 assignedColor,
                 new Evaluator(),
+                null,
                 settings
             );
         }
@@ -211,6 +226,7 @@ public final class EvaluationMatchRunner {
                 "opponentModel",
                 assignedColor,
                 modelOpponent,
+                null,
                 settings
             );
         }
@@ -327,6 +343,7 @@ public final class EvaluationMatchRunner {
             String name,
             int assignedColor,
             PositionEvaluator evaluator,
+            PositionEvaluator orderingEvaluator,
             Settings settings
         ) {
             this.name = name;
@@ -342,7 +359,11 @@ public final class EvaluationMatchRunner {
                 true,
                 settings.opponent != Opponent.MODEL
                     && settings.multiProbCutEnabled,
-                true
+                true,
+                orderingEvaluator,
+                orderingEvaluator == null
+                    ? 0
+                    : settings.orderingMinimumDepth
             );
             limits = new SearchLimits(
                 settings.timeMillis,
@@ -647,6 +668,7 @@ public final class EvaluationMatchRunner {
 
     private static final class Settings {
         private final Path modelPath;
+        private final Path orderingModelPath;
         private final Path opponentModelPath;
         private final Opponent opponent;
         private final int pairs;
@@ -658,9 +680,11 @@ public final class EvaluationMatchRunner {
         private final long openingSeed;
         private final long ponderMillis;
         private final boolean multiProbCutEnabled;
+        private final int orderingMinimumDepth;
 
         private Settings(
             Path modelPath,
+            Path orderingModelPath,
             Path opponentModelPath,
             Opponent opponent,
             int pairs,
@@ -671,9 +695,11 @@ public final class EvaluationMatchRunner {
             int edaxLevel,
             long openingSeed,
             long ponderMillis,
-            boolean multiProbCutEnabled
+            boolean multiProbCutEnabled,
+            int orderingMinimumDepth
         ) {
             this.modelPath = modelPath;
+            this.orderingModelPath = orderingModelPath;
             this.opponentModelPath = opponentModelPath;
             this.opponent = opponent;
             this.pairs = pairs;
@@ -685,16 +711,18 @@ public final class EvaluationMatchRunner {
             this.openingSeed = openingSeed;
             this.ponderMillis = ponderMillis;
             this.multiProbCutEnabled = multiProbCutEnabled;
+            this.orderingMinimumDepth = orderingMinimumDepth;
         }
 
         private static Settings parse(String[] args) {
-            if (args.length < 2 || args.length > 11) {
+            if (args.length < 2 || args.length > 13) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
                         + "<handcrafted|edax|model=path> [pairs] "
                         + "[openingPlies] "
                         + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
-                        + "[openingSeed] [ponderMillis] [multiProbCut]"
+                        + "[openingSeed] [ponderMillis] [multiProbCut] "
+                        + "[orderingModel] [orderingMinimumDepth]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
@@ -722,6 +750,11 @@ public final class EvaluationMatchRunner {
             long openingSeed = longArg(args, 8, DEFAULT_OPENING_SEED);
             long ponderMillis = longArg(args, 9, 0L);
             boolean multiProbCutEnabled = booleanArg(args, 10, true);
+            Path orderingModelPath = args.length > 11
+                && !"-".equals(args[11])
+                    ? Paths.get(args[11])
+                    : null;
+            int orderingMinimumDepth = integerArg(args, 12, 6);
             if (pairs < 1 || pairs > 1000) {
                 throw new IllegalArgumentException("pairs must be 1..1000");
             }
@@ -749,8 +782,17 @@ public final class EvaluationMatchRunner {
                     "ponderMillis must be 0..8000"
                 );
             }
+            if (orderingModelPath == null) {
+                orderingMinimumDepth = 0;
+            } else if (orderingMinimumDepth < 1
+                || orderingMinimumDepth > 64) {
+                throw new IllegalArgumentException(
+                    "orderingMinimumDepth must be 1..64"
+                );
+            }
             return new Settings(
                 modelPath,
+                orderingModelPath,
                 opponentModelPath,
                 opponent,
                 pairs,
@@ -761,7 +803,8 @@ public final class EvaluationMatchRunner {
                 edaxLevel,
                 openingSeed,
                 ponderMillis,
-                multiProbCutEnabled
+                multiProbCutEnabled,
+                orderingMinimumDepth
             );
         }
 

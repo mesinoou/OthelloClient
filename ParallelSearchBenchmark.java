@@ -28,7 +28,7 @@ import java.util.Set;
 
 public final class ParallelSearchBenchmark {
 
-    private static final String BENCHMARK_VERSION = "parallel-search-v3";
+    private static final String BENCHMARK_VERSION = "parallel-search-v4";
     private static final int MIN_POSITION_PLY = 16;
     private static final int MAX_POSITION_PLY = 32;
     private static final int PRIME_DEPTH = 3;
@@ -36,7 +36,9 @@ public final class ParallelSearchBenchmark {
 
     private final Config config;
     private final PositionEvaluator evaluator;
+    private final PositionEvaluator moveOrderingEvaluator;
     private final String modelSha256;
+    private final String orderingModelSha256;
     private final List<PositionToMove> positions;
     private final String suiteSha256;
     private final String generatedAtUtc;
@@ -56,6 +58,14 @@ public final class ParallelSearchBenchmark {
             Path model = config.modelPath.toAbsolutePath().normalize();
             evaluator = LearnedEvaluator.load(model);
             modelSha256 = sha256(model);
+        }
+        if (config.orderingModelPath == null) {
+            moveOrderingEvaluator = null;
+            orderingModelSha256 = "off";
+        } else {
+            Path model = config.orderingModelPath.toAbsolutePath().normalize();
+            moveOrderingEvaluator = LearnedEvaluator.load(model);
+            orderingModelSha256 = sha256(model);
         }
         positions = generatePositions(config.positionCount, config.seed);
         suiteSha256 = hashPositions(positions);
@@ -138,11 +148,14 @@ public final class ParallelSearchBenchmark {
             "generatedAtUtc",
             "gitRevision",
             "modelSha256",
+            "orderingModelSha256",
             "javaVersion",
             "osName",
             "osVersion",
             "availableProcessors",
             "evaluator",
+            "moveOrderingEvaluator",
+            "orderingMinimumDepth",
             "suiteSha256",
             "seed",
             "mode",
@@ -347,7 +360,13 @@ public final class ParallelSearchBenchmark {
             0,
             true,
             true,
-            config.stabilityCutoff
+            config.stabilityCutoff,
+            true,
+            true,
+            moveOrderingEvaluator,
+            moveOrderingEvaluator == null
+                ? 0
+                : config.orderingMinimumDepth
         );
         engine.search(
             BitBoardPosition.initial(),
@@ -415,11 +434,18 @@ public final class ParallelSearchBenchmark {
             generatedAtUtc,
             gitRevision,
             modelSha256,
+            orderingModelSha256,
             System.getProperty("java.version"),
             System.getProperty("os.name"),
             System.getProperty("os.version"),
             Integer.toString(Runtime.getRuntime().availableProcessors()),
             evaluator.description(),
+            moveOrderingEvaluator == null
+                ? "off"
+                : moveOrderingEvaluator.description(),
+            Integer.toString(moveOrderingEvaluator == null
+                ? 0
+                : config.orderingMinimumDepth),
             suiteSha256,
             Long.toString(config.seed),
             mode,
@@ -737,6 +763,7 @@ public final class ParallelSearchBenchmark {
     private static final class Config {
 
         private Path modelPath = Paths.get("data", "evaluation-tables.bin");
+        private Path orderingModelPath;
         private Path outputPath;
         private Mode mode = Mode.ALL;
         private List<Integer> threads = Arrays.asList(1, 2, 4, 8);
@@ -748,6 +775,7 @@ public final class ParallelSearchBenchmark {
         private int warmups = 1;
         private long seed = 20260721L;
         private int transpositionCapacity = 1 << 18;
+        private int orderingMinimumDepth = 6;
         private boolean stabilityCutoff = true;
         private boolean contentionMetrics;
         private boolean overwrite;
@@ -763,6 +791,16 @@ public final class ParallelSearchBenchmark {
                     config.modelPath = Paths.get(value(args, ++index, option));
                 } else if ("--handcrafted".equals(option)) {
                     config.modelPath = null;
+                } else if ("--ordering-model".equals(option)) {
+                    config.orderingModelPath = Paths.get(
+                        value(args, ++index, option)
+                    );
+                } else if ("--ordering-min-depth".equals(option)) {
+                    config.orderingMinimumDepth = parseInt(
+                        args,
+                        ++index,
+                        option
+                    );
                 } else if ("--output".equals(option)) {
                     config.outputPath = Paths.get(value(args, ++index, option));
                 } else if ("--overwrite".equals(option)) {
@@ -828,6 +866,11 @@ public final class ParallelSearchBenchmark {
                 threads.contains(1),
                 "thread configurations must include 1"
             );
+            require(
+                orderingMinimumDepth >= 1
+                    && orderingMinimumDepth <= 64,
+                "ordering minimum depth must be between 1 and 64"
+            );
         }
 
         static void printUsage(java.io.PrintStream stream) {
@@ -835,6 +878,8 @@ public final class ParallelSearchBenchmark {
                 "Usage: java -cp .build ParallelSearchBenchmark [options]"
             );
             stream.println("  --model PATH             learned model (default data/evaluation-tables.bin)");
+            stream.println("  --ordering-model PATH    learned model used only for move ordering");
+            stream.println("  --ordering-min-depth N   remaining depth where learned ordering starts (default 6)");
             stream.println("  --handcrafted            use the handcrafted evaluator");
             stream.println("  --mode fixed|timed|all   benchmark mode (default all)");
             stream.println("  --threads LIST           comma-separated counts (default 1,2,4,8)");
