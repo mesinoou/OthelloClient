@@ -1,0 +1,381 @@
+{
+  "format": "mpc-calibration-v2",
+  "reduction": 4,
+  "groups": [
+    {
+      "phase": 0,
+      "depth": 8,
+      "slope": 0.9568428495275413,
+      "intercept": -8.122315922962684,
+      "sigma": 583.2876080721798,
+      "r_squared": 0.9426209255238011,
+      "t_sigma": 2.5,
+      "enabled": true,
+      "false_high_margin": 1946.9298988869718,
+      "false_low_margin": 2178.080505871982,
+      "train": {
+        "samples": 512,
+        "mse": 338895.4320363048,
+        "mae": 441.048389209812,
+        "false_high_risk": 8,
+        "false_high_rate": 0.015625,
+        "false_low_risk": 3,
+        "false_low_rate": 0.005859375
+      },
+      "calibration_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation": {
+        "samples": 128,
+        "mse": 377287.9676709941,
+        "mae": 427.52793657775993,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 3,
+        "false_low_rate": 0.0234375
+      },
+      "holdout": {
+        "samples": 128,
+        "mse": 244966.03421621333,
+        "mae": 393.7294442340763,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation_conformal": {
+        "samples": 128,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 1,
+        "false_low_rate": 0.0078125
+      },
+      "holdout_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      }
+    },
+    {
+      "phase": 0,
+      "depth": 10,
+      "slope": 0.9786612080748206,
+      "intercept": 19.827231931559254,
+      "sigma": 489.21107893126305,
+      "r_squared": 0.9599968355858279,
+      "t_sigma": 2.5,
+      "enabled": true,
+      "false_high_margin": 1753.5810996372697,
+      "false_low_margin": 2687.7942289559332,
+      "train": {
+        "samples": 512,
+        "mse": 238392.6067813206,
+        "mae": 367.73677850843603,
+        "false_high_risk": 7,
+        "false_high_rate": 0.013671875,
+        "false_low_risk": 5,
+        "false_low_rate": 0.009765625
+      },
+      "calibration_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation": {
+        "samples": 128,
+        "mse": 270456.5541566216,
+        "mae": 361.1322650153228,
+        "false_high_risk": 3,
+        "false_high_rate": 0.0234375,
+        "false_low_risk": 3,
+        "false_low_rate": 0.0234375
+      },
+      "holdout": {
+        "samples": 128,
+        "mse": 196422.9305813846,
+        "mae": 343.85500666594714,
+        "false_high_risk": 2,
+        "false_high_rate": 0.015625,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation_conformal": {
+        "samples": 128,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "holdout_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      }
+    },
+    {
+      "phase": 1,
+      "depth": 8,
+      "slope": 1.0070265863985612,
+      "intercept": 89.1595150942702,
+      "sigma": 541.7814693838151,
+      "r_squared": 0.9549693799144989,
+      "t_sigma": 2.5,
+      "enabled": true,
+      "false_high_margin": 1608.2800242396029,
+      "false_low_margin": 1980.1162837362017,
+      "train": {
+        "samples": 512,
+        "mse": 292380.5700967182,
+        "mae": 411.68757880110184,
+        "false_high_risk": 6,
+        "false_high_rate": 0.01171875,
+        "false_low_risk": 6,
+        "false_low_rate": 0.01171875
+      },
+      "calibration_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation": {
+        "samples": 128,
+        "mse": 313817.8442810462,
+        "mae": 418.32489497391146,
+        "false_high_risk": 3,
+        "false_high_rate": 0.0234375,
+        "false_low_risk": 1,
+        "false_low_rate": 0.0078125
+      },
+      "holdout": {
+        "samples": 128,
+        "mse": 282476.4559993103,
+        "mae": 398.4587324778206,
+        "false_high_risk": 2,
+        "false_high_rate": 0.015625,
+        "false_low_risk": 3,
+        "false_low_rate": 0.0234375
+      },
+      "validation_conformal": {
+        "samples": 128,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "holdout_conformal": {
+        "samples": 128,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      }
+    },
+    {
+      "phase": 1,
+      "depth": 10,
+      "slope": 1.0030618483582239,
+      "intercept": 51.1773652380345,
+      "sigma": 454.52771291923267,
+      "r_squared": 0.9689359870702206,
+      "t_sigma": 2.5,
+      "enabled": false,
+      "false_high_margin": 1214.0022301215768,
+      "false_low_margin": 1005.945113589356,
+      "train": {
+        "samples": 512,
+        "mse": 205788.42836701186,
+        "mae": 352.74116795194664,
+        "false_high_risk": 4,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 3,
+        "false_low_rate": 0.005859375
+      },
+      "calibration_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation": {
+        "samples": 128,
+        "mse": 214799.63561028687,
+        "mae": 364.2512505575093,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "holdout": {
+        "samples": 128,
+        "mse": 227853.95197977516,
+        "mae": 370.3436387049833,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 2,
+        "false_low_rate": 0.015625
+      },
+      "validation_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "holdout_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 3,
+        "false_low_rate": 0.0234375
+      }
+    },
+    {
+      "phase": 2,
+      "depth": 8,
+      "slope": 1.0774516069100148,
+      "intercept": 35.27614291564851,
+      "sigma": 473.9554880400336,
+      "r_squared": 0.9706808630522917,
+      "t_sigma": 2.5,
+      "enabled": false,
+      "false_high_margin": 1427.756443492613,
+      "false_low_margin": 995.1854168106033,
+      "train": {
+        "samples": 512,
+        "mse": 223756.32884387864,
+        "mae": 367.61524146262525,
+        "false_high_risk": 2,
+        "false_high_rate": 0.00390625,
+        "false_low_risk": 9,
+        "false_low_rate": 0.017578125
+      },
+      "calibration_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation": {
+        "samples": 128,
+        "mse": 215668.38761866913,
+        "mae": 373.1135039081955,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 1,
+        "false_low_rate": 0.0078125
+      },
+      "holdout": {
+        "samples": 128,
+        "mse": 66937886.080731474,
+        "mae": 1097.217323828888,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 2,
+        "false_low_rate": 0.015625
+      },
+      "validation_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 2,
+        "false_low_rate": 0.015625
+      },
+      "holdout_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 5,
+        "false_low_rate": 0.0390625
+      }
+    },
+    {
+      "phase": 2,
+      "depth": 10,
+      "slope": 0.8943067734680141,
+      "intercept": -42.446976631764755,
+      "sigma": 465.7760058718334,
+      "r_squared": 0.963473693957582,
+      "t_sigma": 2.5,
+      "enabled": false,
+      "false_high_margin": 1512.9636220187415,
+      "false_low_margin": 911.3687328153328,
+      "train": {
+        "samples": 512,
+        "mse": 216099.83730355126,
+        "mae": 360.3274393961839,
+        "false_high_risk": 2,
+        "false_high_rate": 0.00390625,
+        "false_low_risk": 6,
+        "false_low_rate": 0.01171875
+      },
+      "calibration_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "validation": {
+        "samples": 128,
+        "mse": 189931.93080715157,
+        "mae": 355.95820225404657,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 0,
+        "false_low_rate": 0.0
+      },
+      "holdout": {
+        "samples": 128,
+        "mse": 137007087.21953446,
+        "mae": 1811.5329611176742,
+        "false_high_risk": 1,
+        "false_high_rate": 0.0078125,
+        "false_low_risk": 2,
+        "false_low_rate": 0.015625
+      },
+      "validation_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 5,
+        "false_low_rate": 0.0390625
+      },
+      "holdout_conformal": {
+        "samples": 128,
+        "false_high_risk": 0,
+        "false_high_rate": 0.0,
+        "false_low_risk": 4,
+        "false_low_rate": 0.03125
+      }
+    }
+  ],
+  "train": [
+    ".training\\mpc\\eval-017-candidate\\seed-20260820.csv",
+    ".training\\mpc\\eval-017-candidate\\seed-20260821.csv",
+    ".training\\mpc\\eval-017-candidate\\seed-20260822.csv",
+    ".training\\mpc\\eval-017-candidate\\seed-20260823.csv"
+  ],
+  "calibration": [
+    ".training\\mpc\\eval-017-candidate\\seed-20260824.csv"
+  ],
+  "validation": [
+    ".training\\mpc\\eval-017-candidate\\seed-20260825.csv"
+  ],
+  "holdout": [
+    ".training\\mpc\\eval-017-candidate\\seed-20260826.csv"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "candidate": "benchmark\\results\\eval-017-candidate-mpc-on-edax-l8-100-2026-07-23.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.4,
+  "score_rate_95_ci": [
+    0.335,
+    0.46
+  ],
+  "mean_margin": -8.12,
+  "mean_margin_95_ci": [
+    -10.28,
+    -6.01
+  ],
+  "bootstrap_samples": 50000,
+  "seed": 20260830,
+  "baseline": "benchmark\\results\\eval-016-e010-no-p3-edax-l8-100-2026-07-23.txt",
+  "score_rate_difference": -0.025,
+  "score_rate_difference_95_ci": [
+    -0.075,
+    0.025
+  ],
+  "mean_margin_difference": -0.75,
+  "mean_margin_difference_95_ci": [
+    -2.47,
+    0.98
+  ]
+}

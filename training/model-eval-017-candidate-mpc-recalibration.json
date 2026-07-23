@@ -1,0 +1,80 @@
+{
+  "experiment": "EVAL-017",
+  "status": "candidate-advanced-to-formal-edax-l11-evaluation",
+  "candidate_model_sha256": "d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042",
+  "mpc_recalibration": {
+    "format": "mpc-calibration-v2",
+    "train_seeds": [
+      20260820,
+      20260821,
+      20260822,
+      20260823
+    ],
+    "calibration_seed": 20260824,
+    "validation_seed": 20260825,
+    "holdout_seed": 20260826,
+    "samples_per_phase_per_seed": 128,
+    "enabled_groups": [
+      "phase0-depth8",
+      "phase0-depth10",
+      "phase1-depth8"
+    ],
+    "edax_level_8_on_vs_off": {
+      "score_rate_on": 0.4,
+      "score_rate_off": 0.425,
+      "score_difference": -0.025,
+      "score_difference_95_ci": [
+        -0.075,
+        0.025
+      ],
+      "margin_on": -8.12,
+      "margin_off": -7.37,
+      "margin_difference": -0.75,
+      "margin_difference_95_ci": [
+        -2.47,
+        0.98
+      ]
+    },
+    "decision": "rejected; candidate remains MPC off"
+  },
+  "edax_level_11_tournament_preflight": {
+    "conditions": {
+      "time_millis_per_move": 10000,
+      "threads": 8,
+      "opening_plies": 8,
+      "opening_seed": 20260831,
+      "opening_pairs": 5,
+      "multi_probcut": false,
+      "opening_book": false,
+      "ponder": false
+    },
+    "wins": 6,
+    "draws": 1,
+    "losses": 3,
+    "score_rate": 0.65,
+    "score_rate_95_ci": [
+      0.5,
+      0.85
+    ],
+    "mean_margin": -2.8,
+    "mean_margin_95_ci": [
+      -11.2,
+      4.6
+    ],
+    "average_completed_depth": 13.32,
+    "average_move_millis": 6114.79
+  },
+  "formal_evaluation": {
+    "status": "pending",
+    "opening_seed": 20260902,
+    "opening_pairs": 50,
+    "games": 100,
+    "conditions": "same as preflight",
+    "acceptance": "opening-pair bootstrap lower 95% score bound must be at least 0.50"
+  },
+  "runtime_decision": {
+    "standard_model_changed": false,
+    "multi_probcut_changed": false,
+    "candidate_integration": "pending formal Edax L11 evaluation"
+  }
+}

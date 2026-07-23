@@ -1,0 +1,17 @@
+{
+  "candidate": "benchmark\\results\\eval-017-no-p3-mpc-off-edax-l11-t10000-preflight-10-2026-07-23.txt",
+  "opening_pairs": 5,
+  "games": 10,
+  "score_rate": 0.65,
+  "score_rate_95_ci": [
+    0.5,
+    0.85
+  ],
+  "mean_margin": -2.8,
+  "mean_margin_95_ci": [
+    -11.2,
+    4.6
+  ],
+  "bootstrap_samples": 50000,
+  "seed": 20260901
+}
