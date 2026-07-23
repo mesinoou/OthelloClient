@@ -1,0 +1,55 @@
+{
+  "experiment": "BOOK-003",
+  "date": "2026-07-23",
+  "branch": "codex/book-003-deep-evaluation-ranking",
+  "status": "tooling-adopted-book-rejected",
+  "runtime_book_changed": false,
+  "runtime_book_sha256": "02aedfc4b435bd66ee1f9509626ec60a3b811041c8823b7972044f72fcf9f42b",
+  "teacher": {
+    "model_sha256": "d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042",
+    "depth": 10,
+    "time_limit_ms_per_candidate": 30000,
+    "threads": 1,
+    "table_entries": 4194304,
+    "lmr": false,
+    "multi_prob_cut": false,
+    "score_bound": 6400,
+    "selected_divisor": 64
+  },
+  "data": {
+    "source_games": 137548,
+    "accepted_games": 137135,
+    "rejected_incomplete_games": 413,
+    "registry_sha256": "4d66b389e9616c1b58ca1c0fb211a8b5a15c7aebed3fbe862803b9681f1e0ea7",
+    "fit_years": "1977-2023",
+    "validation_year": 2024,
+    "test_year": 2025
+  },
+  "candidates": [
+    {
+      "name": "all-years-min8",
+      "entries": 8423,
+      "sha256": "9c894d79057e0283d521131a379e3a3e05b55d198b35dbae5db74245c14b82f6",
+      "edax_l8_seed": 20260726,
+      "games": 100,
+      "score_rate": 0.36,
+      "baseline_score_rate": 0.43,
+      "mean_margin": -10.67,
+      "baseline_mean_margin": -8.11,
+      "decision": "reject"
+    },
+    {
+      "name": "all-years-min16",
+      "entries": 4900,
+      "sha256": "c527318e595b979dca766585b3854684949cb159dd0f406585a28d32f4ccdf80",
+      "edax_l8_seed": 20260728,
+      "games": 100,
+      "score_rate": 0.415,
+      "baseline_score_rate": 0.435,
+      "mean_margin": -8.4,
+      "baseline_mean_margin": -7.03,
+      "decision": "reject"
+    }
+  ],
+  "report": "benchmark/results/book-003-deep-ranking-2026-07-23.md"
+}
