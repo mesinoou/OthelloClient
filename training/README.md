@@ -189,7 +189,59 @@ java -cp .build RankingModelScorer `
   ranking=.training/models/eval-ranking/evaluation-tables.bin
 ```
 
-### 2.3 小規模確認
+### 2.5 実探索葉の整合性補正
+
+通常探索が評価関数を実際に呼び出した葉局面を収集し、その局面を追加探索した値との差を学習できる。収集探索ではLMRを有効、Multi-ProbCutを無効にし、評価呼び出しが探索葉だけになるようにする。各親局面では盤面ハッシュの小さい順に一定数を選ぶため、同じ入力と設定から同じ葉集合を得られる。
+
+```powershell
+javac --release 11 -encoding UTF-8 -d .build *.java
+java -cp .build SearchEvaluationTeacherGenerator `
+  .training/ranking/positions-v1.tsv `
+  .training/search-evaluation-v1-d8-d4.tsv `
+  data/evaluation-tables.bin `
+  8 4 30000 16
+
+python -m training.materialize_search_evaluation_dataset `
+  .training/search-evaluation-v1-d8-d4.tsv `
+  --output-dir .training/datasets/search-evaluation-v1-d8-d4 `
+  --overwrite
+
+python -u -m training.train_search_correction `
+  --dataset-dir .training/datasets/search-evaluation-v1-d8-d4 `
+  --base-model data/evaluation-tables.bin `
+  --output-dir .training/models/eval-005-search-correction-e80 `
+  --epochs 80 `
+  --patience 10 `
+  --device cuda `
+  --overwrite
+```
+
+学習器は現行評価値と追加探索値の残差だけを、色交換で符号が反転する6-patternモデルへ学習する。補正モデルの出力層は0から開始し、現行runtime tableへ量子化補正を加算する。現行モデルに対応する`model-float.npz`は不要である。候補は指定した出力ディレクトリへ生成され、`data/evaluation-tables.bin`を変更しない。
+
+補正量を縮小した候補は学習をやり直さず生成できる。
+
+```powershell
+python -m training.scale_search_correction `
+  --base-model data/evaluation-tables.bin `
+  --correction-model `
+    .training/models/eval-005-search-correction-e80/correction-tables.bin `
+  --output-dir .training/models/eval-005-search-correction-e80-s50 `
+  --scale 0.5 `
+  --overwrite
+```
+
+対応するopeningを1単位として対局結果のbootstrap区間を計算する例である。
+
+```powershell
+python -m training.analyze_match_pairs `
+  benchmark/results/candidate.txt `
+  --baseline benchmark/results/baseline.txt `
+  --output benchmark/results/analysis.json
+```
+
+EVAL-005では固定深さ対戦を改善したがEdax L8を改善しなかったため、候補モデルは不採用とした。実験条件と考察は`benchmark/results/eval-005-search-leaf-correction-2026-07-23.md`に記録している。
+
+### 2.6 小規模確認
 
 ```powershell
 python -m training.build_corpus `

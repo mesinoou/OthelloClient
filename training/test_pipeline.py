@@ -32,6 +32,13 @@ from training.export_java_model import (
     export_java_model,
     reverse_ternary_indices,
 )
+from training.java_model import (
+    JavaEvaluationModel,
+    merge_java_models,
+    read_java_model,
+    scale_java_model,
+    write_java_model,
+)
 from training.train_model import (
     PAIR_BRANCHES,
     SCALAR_BRANCHES,
@@ -44,6 +51,10 @@ from training.train_model import (
     swap_pattern_colors,
     wld_targets,
 )
+from training.train_search_correction import (
+    teacher_scores_normalized,
+    zero_output_layers,
+)
 from training.wthor import read_wtb
 from training.build_corpus import (
     canonical_position_key,
@@ -52,6 +63,7 @@ from training.build_corpus import (
 )
 from training.materialize_dataset import aggregate_observations
 from training.evaluate_ranking import average_ranks, pairwise_accuracy
+from training.analyze_match_pairs import read_opening_pairs
 from training.sample_ranking_positions import phase_ids
 
 
@@ -71,6 +83,20 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             5.0 / 6.0,
             pairwise_accuracy(np.asarray([2, 2, 1]), target),
         )
+
+    def test_match_pair_reader_clusters_both_colors(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "match.txt"
+            path.write_text(
+                "game=1/2 opening=1 learned=black result=WIN "
+                "margin=+8 discs=36-28 moves=60 elapsed=1.0s\n"
+                "game=2/2 opening=1 learned=white result=DRAW "
+                "margin=+0 discs=32-32 moves=60 elapsed=1.0s\n",
+                encoding="utf-8",
+            )
+            scores, margins = read_opening_pairs(path)
+            np.testing.assert_allclose(scores, (0.75,))
+            np.testing.assert_allclose(margins, (4.0,))
 
     def test_initial_moves_match_mirrored_source_coordinates(self) -> None:
         black, white = initial_position()
@@ -394,6 +420,58 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
                 struct.unpack_from(">h", binary, first_table_offset + 2)[0],
             )
             self.assertEqual(1, result["score_divisor"])
+
+            loaded = read_java_model(output_path)
+            roundtrip_path = directory / "roundtrip.bin"
+            write_java_model(loaded, roundtrip_path)
+            self.assertEqual(binary, roundtrip_path.read_bytes())
+
+            zero = JavaEvaluationModel(
+                phase_starts=loaded.phase_starts,
+                score_scale=loaded.score_scale,
+                score_divisor=1,
+                phase_bias=(0, 0, 0, 0),
+                tables=tuple(
+                    tuple(np.zeros_like(table) for table in phase)
+                    for phase in loaded.tables
+                ),
+            )
+            correction_path = directory / "zero.bin"
+            combined_path = directory / "combined.bin"
+            write_java_model(zero, correction_path)
+            merge_java_models(output_path, correction_path, combined_path)
+            self.assertEqual(binary, combined_path.read_bytes())
+
+            half_path = directory / "half.bin"
+            scale_java_model(output_path, half_path, 0.5)
+            half = read_java_model(half_path)
+            np.testing.assert_array_equal(
+                half.tables[0][0],
+                np.rint(loaded.tables[0][0].astype(np.float64) * 0.5),
+            )
+
+    def test_search_correction_maps_terminal_scores_to_margin_scale(self) -> None:
+        scores = np.asarray(
+            (100_012, -100_008, 640, -320, 0),
+            dtype=np.int32,
+        )
+        np.testing.assert_allclose(
+            teacher_scores_normalized(scores, 6400),
+            np.asarray((12 / 64, -8 / 64, 0.1, -0.05, 0.0)),
+        )
+
+    def test_search_correction_starts_with_zero_output_layers(self) -> None:
+        model = PatternModel(np.random.default_rng(7))
+        zero_output_layers(model)
+        for branch in (*PATTERN_GROUPS, *PAIR_BRANCHES, *SCALAR_BRANCHES):
+            layers = [
+                int(name.rsplit("_w", 1)[1])
+                for name in model.parameters
+                if name.startswith(branch + "_w")
+            ]
+            last = max(layers)
+            self.assertFalse(model.parameters[f"{branch}_w{last}"].any())
+            self.assertFalse(model.parameters[f"{branch}_b{last}"].any())
 
     def test_quantized_evaluation_applies_java_score_divisor(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
