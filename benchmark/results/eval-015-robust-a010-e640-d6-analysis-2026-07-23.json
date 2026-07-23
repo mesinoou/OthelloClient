@@ -1,0 +1,17 @@
+{
+  "candidate": "benchmark\\results\\eval-015-robust-a010-e640-d6-v-current-2026-07-23.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.555,
+  "score_rate_95_ci": [
+    0.475,
+    0.635
+  ],
+  "mean_margin": 2.53,
+  "mean_margin_95_ci": [
+    -1.21,
+    6.16
+  ],
+  "bootstrap_samples": 100000,
+  "seed": 20260811
+}
