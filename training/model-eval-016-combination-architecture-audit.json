@@ -75,8 +75,9 @@
   },
   "decision": {
     "standard_model_changed": false,
-    "phase_3_disabled_candidate": "advance to Edax L11 tournament-condition evaluation",
+    "phase_3_disabled_candidate": "advance after candidate-specific MPC recalibration or an explicitly MPC-off comparison",
     "interaction_runtime": "not implemented until ranking/regret training and speed gates are defined",
-    "adaptive_lmr_plus_mpc": "rejected because parallel depth gain missed the predeclared gate"
+    "adaptive_lmr_plus_mpc": "rejected because parallel depth gain missed the predeclared gate",
+    "runtime_conflict": "The accepted MPC parameters are SHA-gated to the standard model and automatically disable for the phase-3-disabled candidate."
   }
 }
