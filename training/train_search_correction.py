@@ -55,6 +55,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--l2", type=float, default=1.0e-6)
     parser.add_argument("--residual-clip", type=float, default=1.0)
     parser.add_argument("--occurrence-weight-cap", type=float, default=8.0)
+    parser.add_argument(
+        "--teacher",
+        choices=("deep-search", "edax"),
+        default="deep-search",
+    )
     parser.add_argument("--max-samples-per-phase", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=20260805)
@@ -106,8 +111,19 @@ def residual_targets(
     indices: np.ndarray,
     score_scale: int,
     residual_clip: float,
+    teacher: str,
 ) -> np.ndarray:
-    deep = teacher_scores_normalized(data["deep_score"][indices], score_scale)
+    if teacher == "edax":
+        if "edax_score" not in data:
+            raise ValueError("dataset does not contain Edax teacher scores")
+        deep = data["edax_score"][indices].astype(np.float32) / 64.0
+    elif teacher == "deep-search":
+        deep = teacher_scores_normalized(
+            data["deep_score"][indices],
+            score_scale,
+        )
+    else:
+        raise ValueError(f"unknown teacher: {teacher}")
     static = data["static_score"][indices].astype(np.float32) / score_scale
     residual = deep - static
     return np.clip(residual, -residual_clip, residual_clip)[:, None]
@@ -228,12 +244,14 @@ def train_phase(
         train_indices,
         score_scale,
         args.residual_clip,
+        args.teacher,
     )
     validation_target_np = residual_targets(
         validation,
         validation_indices,
         score_scale,
         args.residual_clip,
+        args.teacher,
     )
     train_weights_np = sample_weights(
         train,
@@ -351,6 +369,7 @@ def evaluate_test(
             indices,
             score_scale,
             args.residual_clip,
+            args.teacher,
         )
         weights = sample_weights(
             test,

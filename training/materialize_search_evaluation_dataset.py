@@ -48,6 +48,19 @@ def rows_to_arrays(
         "teacher_nodes": np.empty(count, dtype=np.int64),
         "teacher_exact": np.empty(count, dtype=np.bool_),
     }
+    edax_fields = {
+        "edax_level": np.uint8,
+        "edax_depth": np.uint8,
+        "edax_score": np.int16,
+        "edax_time_ms": np.int32,
+        "edax_nodes": np.int64,
+    }
+    has_edax = bool(rows) and all(
+        name in rows[0] for name in edax_fields
+    )
+    if has_edax:
+        for name, dtype in edax_fields.items():
+            data[name] = np.empty(count, dtype=dtype)
     for index, row in enumerate(rows):
         data["sample_id"][index] = int(row["sample_id"])
         data["source_parent_id"][index] = int(row["source_parent_id"])
@@ -66,6 +79,9 @@ def rows_to_arrays(
         )
         data["teacher_nodes"][index] = int(row["teacher_nodes"])
         data["teacher_exact"][index] = row["teacher_exact"].lower() == "true"
+        if has_edax:
+            for name in edax_fields:
+                data[name][index] = int(row[name])
 
     occupied = np.fromiter(
         (

@@ -64,6 +64,10 @@ from training.build_corpus import (
 from training.materialize_dataset import aggregate_observations
 from training.evaluate_ranking import average_ranks, pairwise_accuracy
 from training.analyze_match_pairs import read_opening_pairs
+from training.generate_edax_teacher import (
+    parse_result_line,
+    server_position_to_obf,
+)
 from training.sample_ranking_positions import phase_ids
 
 
@@ -97,6 +101,33 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             scores, margins = read_opening_pairs(path)
             np.testing.assert_allclose(scores, (0.75,))
             np.testing.assert_allclose(margins, (4.0,))
+
+    def test_edax_obf_mirrors_server_initial_position(self) -> None:
+        black, white = initial_position()
+        self.assertEqual(
+            "---------------------------OX------XO--------------------------- X",
+            server_position_to_obf(black, white),
+        )
+
+    def test_edax_obf_mirrors_asymmetric_server_position(self) -> None:
+        obf = server_position_to_obf(1 << 0, 1 << 9)
+        self.assertEqual("X", obf[7])
+        self.assertEqual("O", obf[14])
+        self.assertEqual(" X", obf[64:])
+
+    def test_edax_solver_result_parser(self) -> None:
+        result = parse_result_line(
+            " 12|   11   -04        0:00.125        123456"
+            "  d3 E3 f4"
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(12, result.index)
+        self.assertEqual(11, result.depth)
+        self.assertEqual(-4, result.score)
+        self.assertEqual(125, result.time_ms)
+        self.assertEqual(123456, result.nodes)
+        self.assertEqual("d3 E3 f4", result.pv)
 
     def test_initial_moves_match_mirrored_source_coordinates(self) -> None:
         black, white = initial_position()
@@ -449,6 +480,16 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
                 half.tables[0][0],
                 np.rint(loaded.tables[0][0].astype(np.float64) * 0.5),
             )
+            phase_path = directory / "phase.bin"
+            scale_java_model(
+                output_path,
+                phase_path,
+                1.0,
+                (1.0, 0.0, 0.0, 0.0),
+            )
+            phase_model = read_java_model(phase_path)
+            self.assertTrue(phase_model.tables[0][0].any())
+            self.assertFalse(phase_model.tables[1][0].any())
 
     def test_search_correction_maps_terminal_scores_to_margin_scale(self) -> None:
         scores = np.asarray(

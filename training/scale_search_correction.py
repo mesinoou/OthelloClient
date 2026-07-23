@@ -18,12 +18,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--correction-model", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--scale", type=float, required=True)
+    parser.add_argument(
+        "--phase-scales",
+        default="1,1,1,1",
+        help="comma-separated phase multipliers",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    phase_scales = tuple(
+        float(value) for value in args.phase_scales.split(",")
+    )
+    if len(phase_scales) != 4:
+        raise ValueError("phase scales must contain four values")
     if args.output_dir.exists() and not args.overwrite:
         raise FileExistsError(
             f"output directory exists; pass --overwrite: {args.output_dir}"
@@ -35,6 +45,7 @@ def main() -> int:
         args.correction_model,
         scaled_path,
         args.scale,
+        phase_scales,
     )
     merge_result = merge_java_models(
         args.base_model,
@@ -45,6 +56,7 @@ def main() -> int:
         "base_model": str(args.base_model),
         "correction_model": str(args.correction_model),
         "scale": args.scale,
+        "phase_scales": phase_scales,
         "scaled_correction": scale_result,
         "candidate": merge_result,
     }

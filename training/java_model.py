@@ -282,25 +282,37 @@ def scale_java_model(
     source_path: Path,
     output_path: Path,
     scale: float,
+    phase_scales: tuple[float, ...] | None = None,
 ) -> dict[str, int]:
     if not 0.0 <= scale <= 1.0:
         raise ValueError("model scale must be between 0 and 1")
     source = read_java_model(source_path)
     if source.score_divisor != 1:
         raise ValueError("model scaling currently requires score divisor 1")
+    if phase_scales is None:
+        phase_scales = (1.0,) * PHASE_COUNT
+    if len(phase_scales) != PHASE_COUNT:
+        raise ValueError("phase scales must contain four values")
+    if any(not 0.0 <= value <= 1.0 for value in phase_scales):
+        raise ValueError("phase scales must be between 0 and 1")
     scaled = JavaEvaluationModel(
         phase_starts=source.phase_starts,
         score_scale=source.score_scale,
         score_divisor=1,
         phase_bias=tuple(
-            int(np.rint(value * scale)) for value in source.phase_bias
+            int(np.rint(value * scale * phase_scales[phase]))
+            for phase, value in enumerate(source.phase_bias)
         ),
         tables=tuple(
             tuple(
-                np.rint(table.astype(np.float64) * scale).astype(np.int16)
-                for table in phase
+                np.rint(
+                    table.astype(np.float64)
+                    * scale
+                    * phase_scales[phase_index]
+                ).astype(np.int16)
+                for table in phase_tables
             )
-            for phase in source.tables
+            for phase_index, phase_tables in enumerate(source.tables)
         ),
     )
     return write_java_model(scaled, output_path)

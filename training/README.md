@@ -241,7 +241,42 @@ python -m training.analyze_match_pairs `
 
 EVAL-005では固定深さ対戦を改善したがEdax L8を改善しなかったため、候補モデルは不採用とした。実験条件と考察は`benchmark/results/eval-005-search-leaf-correction-2026-07-23.md`に記録している。
 
-### 2.6 小規模確認
+### 2.6 Edax教師値
+
+実探索葉TSVをEdax 4.6のOBF batch solverへ渡し、独立したscore教師を追加できる。Edax座標系に合わせるため盤面を左右反転し、入力順、出力件数、深さ、score、node数を検証する。
+
+```powershell
+python -m training.generate_edax_teacher `
+  .training/search-evaluation-v1-d8-d4.tsv `
+  .training/edax/search-evaluation-l9.tsv `
+  --edax-executable benchmark/edax/wEdax-x86-64-v3.exe `
+  --level 9 `
+  --overwrite
+
+python -m training.evaluate_edax_teacher `
+  .training/edax/search-evaluation-l9.tsv `
+  --reference .training/edax/search-evaluation-l11.tsv
+
+python -m training.materialize_search_evaluation_dataset `
+  .training/edax/search-evaluation-l9.tsv `
+  --output-dir .training/datasets/edax-search-evaluation-l9 `
+  --overwrite
+
+python -u -m training.train_search_correction `
+  --dataset-dir .training/datasets/edax-search-evaluation-l9 `
+  --base-model data/evaluation-tables.bin `
+  --output-dir .training/models/eval-edax-l9 `
+  --teacher edax `
+  --epochs 80 `
+  --patience 10 `
+  --output-anchor 0.5 `
+  --device cuda `
+  --overwrite
+```
+
+`generate_edax_teacher`は入力を変更せず、`edax_level`、`edax_depth`、`edax_score`、`edax_time_ms`、`edax_nodes`、`edax_pv`を追加する。`.obf`と実行条件・全SHA-256を含む同名の`.json`も同じ場所へ保存する。EVAL-006では候補自身が訪れた葉を再採点する反復で初回モデルの劣化を解消したが、Edax L8に対する改善は統計的に確認できず、モデルは不採用とした。
+
+### 2.7 小規模確認
 
 ```powershell
 python -m training.build_corpus `
