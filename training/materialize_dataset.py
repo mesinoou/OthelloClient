@@ -16,8 +16,10 @@ from training.build_corpus import NO_THEORETICAL_LABEL, SPLIT_IDS
 from training.othello import (
     BLACK,
     CORNERS,
+    FULL_MASK,
     frontier_counts,
     legal_moves,
+    neighbors,
     parity_access_difference,
     stable_edge_discs,
 )
@@ -174,6 +176,8 @@ def add_features(
         {
             "mobility_own": np.empty(count, dtype=np.uint8),
             "mobility_opponent": np.empty(count, dtype=np.uint8),
+            "potential_mobility_own": np.empty(count, dtype=np.uint8),
+            "potential_mobility_opponent": np.empty(count, dtype=np.uint8),
             "frontier_own": np.empty(count, dtype=np.uint8),
             "frontier_opponent": np.empty(count, dtype=np.uint8),
             "disc_difference": np.empty(count, dtype=np.int8),
@@ -196,10 +200,17 @@ def add_features(
         opponent_moves = legal_moves(other, own)
         own_frontier, opponent_frontier = frontier_counts(own, other)
         occupied = own | other
+        empty = ~occupied & FULL_MASK
         empties = 64 - occupied.bit_count()
 
         result["mobility_own"][index] = own_moves.bit_count()
         result["mobility_opponent"][index] = opponent_moves.bit_count()
+        result["potential_mobility_own"][index] = (
+            neighbors(other) & empty
+        ).bit_count()
+        result["potential_mobility_opponent"][index] = (
+            neighbors(own) & empty
+        ).bit_count()
         result["frontier_own"][index] = own_frontier
         result["frontier_opponent"][index] = opponent_frontier
         result["disc_difference"][index] = own.bit_count() - other.bit_count()

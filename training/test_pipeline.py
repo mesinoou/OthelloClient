@@ -19,6 +19,7 @@ from training.othello import (
     frontier_counts,
     initial_position,
     legal_moves,
+    neighbors,
     parity_access_difference,
     source_coordinate_to_square,
     stable_edge_discs,
@@ -70,6 +71,7 @@ from training.generate_edax_teacher import (
     server_position_to_obf,
 )
 from training.sample_ranking_positions import phase_ids
+from training.train_potential_mobility_correction import fit_phase_table
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
@@ -142,6 +144,41 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             square for square in range(64) if moves & (1 << square)
         }
         self.assertEqual(mirrored, actual)
+
+    def test_potential_mobility_is_color_antisymmetric(self) -> None:
+        black, white = initial_position()
+        empty = ~(black | white) & ((1 << 64) - 1)
+        black_potential = (neighbors(white) & empty).bit_count()
+        white_potential = (neighbors(black) & empty).bit_count()
+        self.assertEqual((10, 10), (black_potential, white_potential))
+
+        own = 1 << 0
+        opponent = 1 << 9
+        empty = ~(own | opponent) & ((1 << 64) - 1)
+        self.assertEqual(
+            (7, 2),
+            (
+                (neighbors(opponent) & empty).bit_count(),
+                (neighbors(own) & empty).bit_count(),
+            ),
+        )
+
+    def test_potential_mobility_table_is_color_antisymmetric(self) -> None:
+        data = {
+            "phase": np.asarray((0, 0), dtype=np.int8),
+            "static_score": np.asarray((0, 0), dtype=np.int32),
+            "edax_score": np.asarray((1, -1), dtype=np.int16),
+            "occurrences": np.asarray((1, 1), dtype=np.uint32),
+            "potential_mobility_own": np.asarray((1, 2), dtype=np.uint8),
+            "potential_mobility_opponent": np.asarray(
+                (2, 1),
+                dtype=np.uint8,
+            ),
+        }
+        table = fit_phase_table(data, 0, 6400, 0.0)
+        self.assertEqual(100.0, table[1, 2])
+        self.assertEqual(-100.0, table[2, 1])
+        self.assertEqual(0.0, table[1, 1])
 
     def test_first_record_prefix_is_legal(self) -> None:
         black, white = initial_position()

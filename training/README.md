@@ -289,6 +289,19 @@ python -m training.adjust_model_bias `
 
 この機能は仮説検証用であり、生成したbiasが有効であることを保証しない。EVAL-007では探索葉上のEdax平均残差を加えた候補がEdax L8で悪化したため、同じ値を標準モデルへ統合してはならない。
 
+潜在的モビリティだけの追加価値は、Javaモデル形式を変更せずオフラインで確認できる。
+
+```powershell
+python -m training.train_potential_mobility_correction `
+  --dataset-dir .training/datasets/edax-search-evaluation-full-l9-potential `
+  --base-model data/evaluation-tables.bin `
+  --output-dir .training/models/potential-mobility `
+  --ridge-candidates 64,256,1024,4096 `
+  --overwrite
+```
+
+入力データセットは現行`materialize_dataset`で再生成し、`potential_mobility_own`と`potential_mobility_opponent`を含める。EVAL-008では中盤test誤差をほぼ改善しなかったため、Java評価器への表追加は行っていない。
+
 ### 2.7 小規模確認
 
 ```powershell

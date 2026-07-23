@@ -1,0 +1,48 @@
+{
+  "experiment": "EVAL-008",
+  "status": "rejected-before-runtime",
+  "feature": {
+    "own": "empty squares adjacent to opponent discs",
+    "opponent": "empty squares adjacent to own discs",
+    "table": "antisymmetric 65x65 table per phase"
+  },
+  "dataset": {
+    "train": 16384,
+    "validation": 4096,
+    "test": 8176,
+    "metadata_sha256": "b9838d0df2ef7ae796f0f86a1b32180437cb9d29b8732b345b2b52b61bbfcb6c"
+  },
+  "ridge_candidates": [
+    64,
+    256,
+    1024,
+    4096
+  ],
+  "selected_ridge": [
+    4096,
+    4096,
+    1024,
+    64
+  ],
+  "test_mse_reduction": [
+    -0.0000561,
+    0.0000162,
+    0.0010206,
+    0.0119669
+  ],
+  "test_mae_discs": {
+    "baseline": [
+      8.5428,
+      8.0581,
+      8.7178,
+      7.3946
+    ],
+    "corrected": [
+      8.5428,
+      8.0579,
+      8.7112,
+      7.3301
+    ]
+  },
+  "table_sha256": "ccdf0997316eca84b55740de8b1eb1c2c9858eecfd99640220ea16cc20b948a2"
+}
