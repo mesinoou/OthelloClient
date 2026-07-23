@@ -26,6 +26,10 @@ from training.othello import (
     wthor_move_code_to_square,
 )
 from training.patterns import PATTERN_GROUPS, encode_group
+from training.audit_pattern_residuals import (
+    CANDIDATE_PATTERNS,
+    color_swap_map,
+)
 from training.export_java_model import (
     AUXILIARY_TABLES,
     MAGIC,
@@ -77,6 +81,31 @@ from training.train_potential_mobility_correction import fit_phase_table
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
+    def test_pattern_audit_candidates_are_symmetric(self) -> None:
+        expected = {
+            "diagonal5": (5, 8),
+            "diagonal4": (4, 8),
+            "corner2x5": (10, 8),
+            "edge8": (8, 8),
+            "control_corner3x3": (9, 8),
+        }
+        for name, (digits, instances) in expected.items():
+            candidate = CANDIDATE_PATTERNS[name]
+            self.assertEqual(digits, candidate.digits)
+            self.assertEqual(instances, len(candidate.patterns))
+            self.assertEqual(
+                instances,
+                len(set(candidate.patterns)),
+            )
+
+    def test_pattern_audit_color_swap_is_an_involution(self) -> None:
+        for digits in (4, 5, 8, 9, 10):
+            swap = color_swap_map(digits)
+            np.testing.assert_array_equal(
+                swap[swap],
+                np.arange(3**digits),
+            )
+
     def test_ranking_phase_boundaries_match_model_phases(self) -> None:
         ply = np.asarray([8, 19, 20, 29, 30, 39, 40, 52], dtype=np.uint8)
         np.testing.assert_array_equal(
