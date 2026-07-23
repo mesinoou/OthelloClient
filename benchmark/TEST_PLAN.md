@@ -23,7 +23,7 @@ javac --release 11 -encoding UTF-8 -Xlint:all -d .build *.java
 
 ### L1: Required regression
 
-すべての変更で次の11テストを実行する。
+すべての変更で次の12テストを実行する。
 
 ```powershell
 $tests = @(
@@ -37,12 +37,13 @@ $tests = @(
   "OthelloClientProtocolTest",
   "EdaxGtpEngineTest",
   "RuntimeConfigurationTest",
-  "OthelloPonderingTest"
+  "OthelloPonderingTest",
+  "HumanVsAiGameTest"
 )
 foreach ($test in $tests) { java -cp .build $test }
 ```
 
-合格条件は11件すべてPASSである。失敗した実験は性能値にかかわらず停止する。
+合格条件は12件すべてPASSである。失敗した実験は性能値にかかわらず停止する。
 
 ### L2: Search correctness and determinism
 
@@ -142,6 +143,22 @@ java -cp .build EvaluationMatchRunner `
 先後2局は棋力推定ではなく、時間管理、4スレッド動作、終盤完全読みへの移行を確認するsmoke testである。違法手、クラッシュ、10秒超過、未完了局は0件を必須とする。
 
 大会前の最終候補では、実サーバを`-timeout 10 -debug -trans`で起動し、通信クライアント同士で最低2局完走させる。長時間の棋力確認が必要な場合は別計算機で10秒条件20局以上を実行する。
+
+#### Edax L11 target gate
+
+長期目標は、大会条件でEdax 4.6 level 11に統計的に互角以上となることである。探索深度の表示値だけでは到達を判定せず、次の固定対局を最終判定に使う。
+
+- 10,000 ms/手、対象計算機で事前確定したthread数、最大深さ64
+- 定石off、ponder off、候補モデル用に校正済みの選択的探索だけをon
+- 8-ply openingを50組、先後交換した100局、固定seed
+- point score 50%以上
+- opening pair bootstrapによるscore差の片側95%下限が非劣性限界-5 point以上
+- 平均石差差の95%区間が明白な悪化を示さない
+- 違法手、未完了局、時間超過、GTP error 0件
+
+`score > 50%`の優越を主張する場合は、score差の片側95%下限も0より大きいことを要求する。100局で区間が広い場合は同じ条件と新しい事前固定seedでopening pairを追加し、都合のよい部分集合だけを選ばない。
+
+高コスト試験を候補ごとに繰り返さないため、Edax L8・100 ms・100局で現行比+5 point以上、または対応平均石差の95%区間が改善方向となった候補だけをL11予備20局へ進める。L11予備でpoint score 40%未満かつ平均石差も悪化した候補は正式100局へ進めない。
 
 #### RUNTIME-001 configuration gate
 
