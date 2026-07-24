@@ -120,7 +120,20 @@ java -cp .build EvaluationMatchRunner `
   10 8 10000 8 1
 ```
 
-引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel openingSeed ponderMillis multiProbCut openingBook whiteModel`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。`multiProbCut`は省略時`true`で、`false`を指定するとモデル固有MPCの効果を除外できる。定石バイナリまたは`off`の後へ白番用モデルまたは`same`を指定でき、色別モデル構成を直接検証できる。定石ありの結果には`bookMoves`が出力される。`opponent`へ`model=<path>`を指定すると、両者のMulti-ProbCutを強制的に無効化し、同じ探索条件で評価モデルだけを比較する。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
+引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel openingSeed ponderMillis multiProbCut openingBook whiteModel traceTsv learnedColors openingNumbers`である。`pairs=10`は既定では各オープニングで先後2局、合計20局を表す。`multiProbCut`は省略時`true`で、`false`を指定するとモデル固有MPCの効果を除外できる。定石バイナリまたは`off`の後へ白番用モデルまたは`same`を指定でき、色別モデル構成を直接検証できる。`traceTsv`は既定`off`で、指定時は各着手の盤面、探索深度、時間、WLD状態をTSVへ保存する。`learnedColors`は`both`、`black`、`white`、`openingNumbers`は`all`または`2,9,15`形式で診断対象を限定する。定石ありの結果には`bookMoves`が出力される。`opponent`へ`model=<path>`を指定すると、両者のMulti-ProbCutを強制的に無効化し、同じ探索条件で評価モデルだけを比較する。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
+
+敗局トレースから白番の全合法手をEdaxで同一条件採点し、選択regretを集計する。
+
+```powershell
+python -m training.analyze_loss_trace prepare trace.tsv siblings.tsv --color white
+python -m training.generate_edax_teacher siblings.tsv siblings-edax.tsv `
+  --level 11 --threads 4
+python -m training.analyze_loss_trace report `
+  trace.tsv siblings-edax.tsv analysis.json
+```
+
+開始局面の色有利は`openings`で局面を抽出し、同じEdax採点後に
+`opening-report <match-log> <scored-openings> <output-json>`で分離できる。
 
 ## テスト
 
