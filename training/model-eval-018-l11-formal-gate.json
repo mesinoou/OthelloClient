@@ -1,6 +1,6 @@
 {
   "experiment": "EVAL-018",
-  "status": "rejected",
+  "status": "held",
   "source_experiment": "EVAL-017",
   "candidate_model": {
     "construction": "standard plus EVAL-010 correction with phase scales 1,1,1,0",
@@ -88,11 +88,12 @@
     "standard_model_sha256": "6e118c928729e003e89742d3b57fe6ed35fa9233a38dbe8af852041ebee39457",
     "multi_probcut_changed": false,
     "opening_book_changed": false,
-    "candidate_integration": "rejected"
+    "candidate_integration": "held as the EVAL-019 improvement base; not installed as the standard runtime model"
   },
   "next_experiment": {
     "id": "EVAL-019",
-    "candidate": "quantized antisymmetric interaction residual head for phases 1-2",
+    "base_candidate_sha256": "d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042",
+    "candidate": "quantized antisymmetric interaction residual head for phases 1-2 on the retained EVAL-018 evaluator",
     "primary_objectives": [
       "sibling pairwise ranking",
       "Edax top-1 move",
@@ -100,6 +101,7 @@
     ],
     "controls": [
       "same-split linear head",
+      "retained EVAL-018 evaluator",
       "standard additive evaluator"
     ],
     "runtime_gates": {
