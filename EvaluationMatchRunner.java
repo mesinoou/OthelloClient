@@ -39,6 +39,10 @@ public final class EvaluationMatchRunner {
 
     private static void run(Settings settings) throws IOException {
         PositionEvaluator learned = LearnedEvaluator.load(settings.modelPath);
+        PositionEvaluator whiteLearned =
+            settings.whiteModelPath == null
+                ? learned
+                : LearnedEvaluator.load(settings.whiteModelPath);
         PositionEvaluator modelOpponent = settings.opponent == Opponent.MODEL
             ? LearnedEvaluator.load(settings.opponentModelPath)
             : null;
@@ -53,7 +57,8 @@ public final class EvaluationMatchRunner {
         MatchStatistics statistics = new MatchStatistics(settings);
 
         System.out.println("evaluation match");
-        System.out.println("model=" + learned.description());
+        System.out.println("blackModel=" + learned.description());
+        System.out.println("whiteModel=" + whiteLearned.description());
         System.out.println(
             "opponent=" + settings.opponent
                 + (settings.opponent == Opponent.EDAX
@@ -93,6 +98,7 @@ public final class EvaluationMatchRunner {
                 GameRun run = playOneGame(
                     settings,
                     learned,
+                    whiteLearned,
                     modelOpponent,
                     opening,
                     learnedColor,
@@ -124,12 +130,16 @@ public final class EvaluationMatchRunner {
 
     private static GameRun playOneGame(
         Settings settings,
-        PositionEvaluator learnedEvaluator,
+        PositionEvaluator blackLearnedEvaluator,
+        PositionEvaluator whiteLearnedEvaluator,
         PositionEvaluator modelOpponent,
         Opening opening,
         int learnedColor,
         OpeningBook openingBook
     ) throws IOException {
+        PositionEvaluator learnedEvaluator = learnedColor == 1
+            ? blackLearnedEvaluator
+            : whiteLearnedEvaluator;
         SearchMatchPlayer learned = new SearchMatchPlayer(
             "learned",
             learnedColor,
@@ -674,6 +684,7 @@ public final class EvaluationMatchRunner {
 
     private static final class Settings {
         private final Path modelPath;
+        private final Path whiteModelPath;
         private final Path opponentModelPath;
         private final Opponent opponent;
         private final int pairs;
@@ -689,6 +700,7 @@ public final class EvaluationMatchRunner {
 
         private Settings(
             Path modelPath,
+            Path whiteModelPath,
             Path opponentModelPath,
             Opponent opponent,
             int pairs,
@@ -703,6 +715,7 @@ public final class EvaluationMatchRunner {
             Path openingBookPath
         ) {
             this.modelPath = modelPath;
+            this.whiteModelPath = whiteModelPath;
             this.opponentModelPath = opponentModelPath;
             this.opponent = opponent;
             this.pairs = pairs;
@@ -718,14 +731,14 @@ public final class EvaluationMatchRunner {
         }
 
         private static Settings parse(String[] args) {
-            if (args.length < 2 || args.length > 12) {
+            if (args.length < 2 || args.length > 13) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
                         + "<handcrafted|edax|model=path> [pairs] "
                         + "[openingPlies] "
                         + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
                         + "[openingSeed] [ponderMillis] [multiProbCut] "
-                        + "[openingBook|off]"
+                        + "[openingBook|off] [whiteModel|same]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
@@ -757,6 +770,10 @@ public final class EvaluationMatchRunner {
                 || "off".equalsIgnoreCase(args[11])
                     ? null
                     : Paths.get(args[11]);
+            Path whiteModelPath = args.length <= 12
+                || "same".equalsIgnoreCase(args[12])
+                    ? null
+                    : Paths.get(args[12]);
             if (pairs < 1 || pairs > 1000) {
                 throw new IllegalArgumentException("pairs must be 1..1000");
             }
@@ -786,6 +803,7 @@ public final class EvaluationMatchRunner {
             }
             return new Settings(
                 modelPath,
+                whiteModelPath,
                 opponentModelPath,
                 opponent,
                 pairs,

@@ -15,6 +15,8 @@ final class ClientOptions {
     final String threadSpec;
     final long timeMillis;
     final Path evaluationModel;
+    final Path blackEvaluationModel;
+    final Path whiteEvaluationModel;
     final String ttSpec;
     final boolean ponderEnabled;
     final double ponderRatio;
@@ -26,6 +28,8 @@ final class ClientOptions {
         String threadSpec,
         long timeMillis,
         Path evaluationModel,
+        Path blackEvaluationModel,
+        Path whiteEvaluationModel,
         String ttSpec,
         boolean ponderEnabled,
         double ponderRatio
@@ -36,6 +40,8 @@ final class ClientOptions {
         this.threadSpec = threadSpec;
         this.timeMillis = timeMillis;
         this.evaluationModel = evaluationModel;
+        this.blackEvaluationModel = blackEvaluationModel;
+        this.whiteEvaluationModel = whiteEvaluationModel;
         this.ttSpec = ttSpec;
         this.ponderEnabled = ponderEnabled;
         this.ponderRatio = ponderRatio;
@@ -65,6 +71,8 @@ final class ClientOptions {
         Path evaluationModel = positionalCount >= 6
             ? Paths.get(args[5])
             : null;
+        Path blackEvaluationModel = null;
+        Path whiteEvaluationModel = null;
         String ttSpec = null;
         boolean ponderEnabled = false;
         double ponderRatio = DEFAULT_PONDER_RATIO;
@@ -80,6 +88,28 @@ final class ClientOptions {
                 ttSpec = args[index];
             } else if (option.startsWith("--tt=")) {
                 ttSpec = option.substring("--tt=".length());
+            } else if ("--black-model".equals(option)) {
+                if (++index >= args.length) {
+                    throw new IllegalArgumentException(
+                        "--black-modelにはモデルパスが必要です。"
+                    );
+                }
+                blackEvaluationModel = Paths.get(args[index]);
+            } else if (option.startsWith("--black-model=")) {
+                blackEvaluationModel = Paths.get(
+                    option.substring("--black-model=".length())
+                );
+            } else if ("--white-model".equals(option)) {
+                if (++index >= args.length) {
+                    throw new IllegalArgumentException(
+                        "--white-modelにはモデルパスが必要です。"
+                    );
+                }
+                whiteEvaluationModel = Paths.get(args[index]);
+            } else if (option.startsWith("--white-model=")) {
+                whiteEvaluationModel = Paths.get(
+                    option.substring("--white-model=".length())
+                );
             } else if ("--ponder".equals(option)) {
                 if (++index >= args.length) {
                     throw new IllegalArgumentException(
@@ -133,6 +163,8 @@ final class ClientOptions {
             threadSpec,
             timeMillis,
             evaluationModel,
+            blackEvaluationModel,
+            whiteEvaluationModel,
             ttSpec,
             ponderEnabled,
             ponderRatio
@@ -144,6 +176,7 @@ final class ClientOptions {
             "使い方: java OthelloClient <host> <port> "
                 + "[nickname] [threads|auto] [timeMillis] "
                 + "[evaluationModel] [--tt auto|entries] "
+                + "[--black-model path] [--white-model path] "
                 + "[--ponder on|off] [--ponder-ratio 0..1]"
         );
     }

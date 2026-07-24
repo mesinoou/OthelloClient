@@ -70,6 +70,15 @@ java -cp .build OthelloClient 127.0.0.1 25033 Player auto 8000 `
   --ponder on --ponder-ratio 0.8
 ```
 
+黒番と白番で別の検証済み評価モデルを使う場合は、位置引数のモデルを
+共通既定値として、`--black-model`または`--white-model`で上書きする。
+
+```powershell
+java -cp .build OthelloClient 127.0.0.1 25033 Player auto 8000 `
+  .training/models/eval-016-e010-no-p3/evaluation-tables.bin `
+  --white-model data/evaluation-tables.bin --tt auto --ponder off
+```
+
 比較実験などで構成を固定する場合は従来どおり数値を指定する。
 
 ```powershell
@@ -111,7 +120,7 @@ java -cp .build EvaluationMatchRunner `
   10 8 10000 8 1
 ```
 
-引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel openingSeed ponderMillis multiProbCut openingBook`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。`multiProbCut`は省略時`true`で、`false`を指定するとモデル固有MPCの効果を除外できる。末尾へ定石バイナリまたは`off`を指定でき、定石ありの結果には`bookMoves`が出力される。`opponent`へ`model=<path>`を指定すると、両者のMulti-ProbCutを強制的に無効化し、同じ探索条件で評価モデルだけを比較する。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
+引数は順に`model opponent pairs openingPlies timeMillis maxDepth threads edaxLevel openingSeed ponderMillis multiProbCut openingBook whiteModel`である。`pairs=10`は各オープニングで先後2局、合計20局を表す。`multiProbCut`は省略時`true`で、`false`を指定するとモデル固有MPCの効果を除外できる。定石バイナリまたは`off`の後へ白番用モデルまたは`same`を指定でき、色別モデル構成を直接検証できる。定石ありの結果には`bookMoves`が出力される。`opponent`へ`model=<path>`を指定すると、両者のMulti-ProbCutを強制的に無効化し、同じ探索条件で評価モデルだけを比較する。2026-07-21の本学習モデル評価は[benchmark/results/learned-e80-2026-07-21.md](benchmark/results/learned-e80-2026-07-21.md)に記録している。
 
 ## テスト
 

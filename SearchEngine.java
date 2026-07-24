@@ -241,6 +241,12 @@ public final class SearchEngine {
         cancelActiveTasks();
     }
 
+    synchronized void clearTranspositionTable() {
+        if (table != null) {
+            table.clear();
+        }
+    }
+
     boolean hasTransposition(BitBoardPosition position, int color) {
         if (position == null) {
             throw new NullPointerException("position");
