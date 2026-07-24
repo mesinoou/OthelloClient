@@ -1,0 +1,66 @@
+{
+  "experiment": "TOURNEY-001",
+  "status": "completed",
+  "date": "2026-07-24",
+  "feature": {
+    "color_specific_evaluator_selection": "retained as an optional capability",
+    "default_behavior_changed": false
+  },
+  "models": {
+    "standard_sha256": "6e118c928729e003e89742d3b57fe6ed35fa9233a38dbe8af852041ebee39457",
+    "held_sha256": "d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042",
+    "opening_book_sha256": "02aedfc4b435bd66ee1f9509626ec60a3b811041c8823b7972044f72fcf9f42b"
+  },
+  "l8_independent_gate": {
+    "opening_seed": 20260907,
+    "games": 100,
+    "standard_score_rate": 0.305,
+    "held_score_rate": 0.335,
+    "hybrid_score_rate": 0.365,
+    "hybrid_score_difference_vs_standard": 0.06,
+    "hybrid_score_difference_vs_standard_95_ci": [
+      -0.015,
+      0.135
+    ],
+    "hybrid_score_difference_vs_held": 0.03,
+    "hybrid_score_difference_vs_held_95_ci": [
+      -0.05,
+      0.115
+    ]
+  },
+  "l11_tournament_preflight": {
+    "opening_seed": 20260908,
+    "opening_pairs": 10,
+    "games": 20,
+    "time_millis": 8000,
+    "threads": 8,
+    "opening_book": true,
+    "wins": 6,
+    "draws": 3,
+    "losses": 11,
+    "score_rate": 0.375,
+    "mean_margin": -14.55,
+    "black_score_rate": 0.5,
+    "white_score_rate": 0.25,
+    "average_completed_depth": 12.51,
+    "illegal_or_unfinished_games": 0
+  },
+  "decision": {
+    "hybrid_tournament_default": "rejected because the L8 white-side gain did not reproduce at L11",
+    "tournament_model": "EVAL-018 held for both colors",
+    "tournament_model_path": "data/evaluation-tables-tournament.bin",
+    "time_millis": 8000,
+    "threads": "auto",
+    "tt": "auto",
+    "ponder": false,
+    "opening_book": "data/opening-book.bin"
+  },
+  "server_smoke": {
+    "games": 2,
+    "completed": 2,
+    "client_exit_codes_nonzero": 0,
+    "stderr_files_nonempty": 0,
+    "illegal_moves": 0,
+    "timeout_losses": 0
+  }
+}

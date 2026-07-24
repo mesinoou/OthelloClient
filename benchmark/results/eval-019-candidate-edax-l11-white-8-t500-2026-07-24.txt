@@ -1,0 +1,18 @@
+evaluation match
+blackModel=learned-table-v1 (scoreScale=6400, divisor=1, bound=77470, path=D:\�̓_���|�[�g\OthelloClient\.training\models\eval-019-white-response-ranking\evaluation-tables.bin)
+whiteModel=learned-table-v1 (scoreScale=6400, divisor=1, bound=77470, path=D:\�̓_���|�[�g\OthelloClient\.training\models\eval-019-white-response-ranking\evaluation-tables.bin)
+opponent=EDAX, edaxLevel=11
+pairs=8, selectedOpenings=8, games=8, openingPlies=8, openingSeed=20260725, learnedColors=white
+searchTimeMillis=500, maxDepth=64, threads=8, ponderMillis=0, multiProbCut=true, openingBook=off, trace=off
+game=1/8 opening=1 learned=white result=LOSS margin=-24 discs=44-20 moves=60 elapsed=9.114s
+game=2/8 opening=2 learned=white result=LOSS margin=-38 discs=51-13 moves=60 elapsed=9.319s
+game=3/8 opening=3 learned=white result=LOSS margin=-12 discs=38-26 moves=60 elapsed=9.441s
+game=4/8 opening=4 learned=white result=LOSS margin=-28 discs=46-18 moves=60 elapsed=9.180s
+game=5/8 opening=5 learned=white result=LOSS margin=-22 discs=43-21 moves=60 elapsed=9.509s
+game=6/8 opening=6 learned=white result=LOSS margin=-18 discs=41-23 moves=60 elapsed=9.213s
+game=7/8 opening=7 learned=white result=LOSS margin=-39 discs=51-12 moves=59 elapsed=9.404s
+game=8/8 opening=8 learned=white result=LOSS margin=-12 discs=38-26 moves=60 elapsed=9.360s
+summary
+games=8 wins=0 draws=0 losses=8 scoreRate=0.00% averageMargin=-24.13 elapsed=74.540s
+learned: moves=201 avgMove=358.201ms avgDepth=10.59 nodes=169622123 nodesPerSecond=2355914 budgetStops=141 exactMoves=60 initialTtHits=190 bookMoves=0 wldAttempts=49 wldSolutions=49 wldNodes=43651 wldSeconds=0.009
+edax: moves=214 avgMove=11.640ms

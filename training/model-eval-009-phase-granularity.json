@@ -1,0 +1,58 @@
+{
+  "experiment": "EVAL-009",
+  "status": "rejected-before-runtime",
+  "dataset_metadata_sha256": "b9838d0df2ef7ae796f0f86a1b32180437cb9d29b8732b345b2b52b61bbfcb6c",
+  "training": {
+    "teacher": "edax",
+    "epochs": 160,
+    "patience": 15,
+    "output_anchor": 0.5,
+    "device": "cuda",
+    "seed": 20260805
+  },
+  "phase4": {
+    "phase_starts": [
+      20,
+      30,
+      40,
+      50
+    ],
+    "test_corrected_mse": 0.024453340,
+    "test_mse_reduction": 0.084595,
+    "test_corrected_mae": 0.119638441,
+    "float_model_sha256": "8a3095b0d93f5b1de93ce9ab0cad961fbd17c8ff44ae99ef8cc4e8f37e4db5cd",
+    "metadata_sha256": "9c291e7bfb4f94f6dc9a1bfb06e91fabcb80f892b1d6e884fc6040254901caf8"
+  },
+  "phase8": {
+    "phase_starts": [
+      14,
+      25,
+      30,
+      35,
+      40,
+      45,
+      50,
+      56
+    ],
+    "test_counts": [
+      463,
+      675,
+      601,
+      841,
+      1060,
+      1075,
+      1887,
+      1574
+    ],
+    "test_corrected_mse": 0.024423202,
+    "test_mse_reduction": 0.086018,
+    "test_corrected_mae": 0.119114323,
+    "float_model_sha256": "515ccd0a591b16c0518ae8cf6c9ff60e503176375986ae53f16a44e85656f4c6",
+    "metadata_sha256": "ef03f732da1f80a9e25604077981236a8ecdad0e9a46df9c09cc96660884a282"
+  },
+  "phase8_difference": {
+    "corrected_mse": -0.000030138,
+    "mse_reduction_points": 0.001423,
+    "corrected_mae_relative": -0.004381
+  }
+}

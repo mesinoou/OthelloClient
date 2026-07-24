@@ -1,0 +1,28 @@
+{
+  "candidate": "benchmark\\results\\eval-007-tempo-bias-full-edax-l8-100-2026-07-23.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.355,
+  "score_rate_95_ci": [
+    0.275,
+    0.435
+  ],
+  "mean_margin": -10.41,
+  "mean_margin_95_ci": [
+    -13.43,
+    -7.44
+  ],
+  "bootstrap_samples": 100000,
+  "seed": 20260809,
+  "baseline": "benchmark\\results\\eval-005-current-mpc-off-edax-l8-100-2026-07-23.txt",
+  "score_rate_difference": -0.02,
+  "score_rate_difference_95_ci": [
+    -0.12,
+    0.08
+  ],
+  "mean_margin_difference": -1.13,
+  "mean_margin_difference_95_ci": [
+    -4.29,
+    1.88
+  ]
+}

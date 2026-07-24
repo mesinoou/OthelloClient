@@ -1,0 +1,74 @@
+{
+  "experiment": "EVAL-005",
+  "status": "model-rejected-infrastructure-accepted",
+  "source_search": {
+    "parent_positions": 1792,
+    "depth": 8,
+    "lmr": true,
+    "multi_probcut": false,
+    "samples_per_parent": 16
+  },
+  "teacher_search": {
+    "additional_depth": 4,
+    "lmr": false,
+    "multi_probcut": false
+  },
+  "dataset": {
+    "train": 16384,
+    "validation": 4096,
+    "test": 8176,
+    "source_tsv_sha256": "7805d6cf7e18dd50f03e75bb225d579138c63efa6dd43b56078401701831cd4f",
+    "metadata_sha256": "f3199e2cb5c246c94aa9aeb97a760cb05deef68b4bfdd3fb05fcaf25186b9b5b"
+  },
+  "training": {
+    "epochs": 80,
+    "patience": 10,
+    "learning_rate": 0.0002,
+    "huber_delta": 0.1,
+    "output_anchor": 0.1,
+    "l2": 0.000001,
+    "residual_clip": 1.0,
+    "device": "cuda",
+    "seed": 20260805
+  },
+  "test_metrics": [
+    {
+      "phase": 0,
+      "samples": 1138,
+      "baseline_mse": 0.01837346889078617,
+      "corrected_mse": 0.016425592824816704,
+      "baseline_mae": 0.09821189939975739,
+      "corrected_mae": 0.0918806791305542
+    },
+    {
+      "phase": 1,
+      "samples": 1442,
+      "baseline_mse": 0.016422634944319725,
+      "corrected_mse": 0.015437323600053787,
+      "baseline_mae": 0.09783665835857391,
+      "corrected_mae": 0.09443100541830063
+    },
+    {
+      "phase": 2,
+      "samples": 2135,
+      "baseline_mse": 0.01699565351009369,
+      "corrected_mse": 0.015738923102617264,
+      "baseline_mae": 0.09977435320615768,
+      "corrected_mae": 0.09592051804065704
+    },
+    {
+      "phase": 3,
+      "samples": 3461,
+      "baseline_mse": 0.0210493803024292,
+      "corrected_mse": 0.02035059593617916,
+      "baseline_mae": 0.11356663703918457,
+      "corrected_mae": 0.1119292676448822
+    }
+  ],
+  "artifacts": {
+    "base_model_sha256": "6e118c928729e003e89742d3b57fe6ed35fa9233a38dbe8af852041ebee39457",
+    "correction_model_sha256": "796c1f1def23ccab00ca9fc545a99fabd89fcaefe6f8d2713a35cfce870b0084",
+    "full_candidate_sha256": "b3c1d7f94619c417931f4c7aac53f8b0bce260c6c5712e3803ea2ba270313cea",
+    "half_candidate_sha256": "6af7978baff78370e0efa796aa12d9aa0f9ca9430a4c3ae69b7b5c1eb890a498"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "experiment": "EVAL-006",
+  "status": "model-rejected-infrastructure-accepted",
+  "teacher": {
+    "engine": "Edax 4.6",
+    "level": 9,
+    "binary_sha256": "d85b7555879387cd20cee2dab28bcbbdb09631f245459e48b1b0b34b4558800c",
+    "evaluation_sha256": "f8b2299612d9fa4414157e70e932636e33111c2602d0c2fc382a7d90ef21b792"
+  },
+  "calibration": {
+    "positions": 768,
+    "level_9_sha256": "c55a041725970ec6c772d020cde73d5f9503c994586cdd8097a799b46487fc73",
+    "level_11_sha256": "0331d4688e312843eadff9b469b90b26af34c2376fb4d9314ee4b0869c5e810b",
+    "score_correlation": 0.995439,
+    "mean_absolute_difference_discs": 0.9414,
+    "sign_agreement": 0.9753
+  },
+  "iteration_1": {
+    "samples": 28656,
+    "source_tsv_sha256": "294b2e269cc1a646cd10c142c8f6569841a9c3bfd009460141a7e437c64544fb",
+    "dataset_metadata_sha256": "b1fa0d407ed13d03ae327546e1e62b7559022ab015dc1a3868c336d1d7b9de6c",
+    "base_model_sha256": "6e118c928729e003e89742d3b57fe6ed35fa9233a38dbe8af852041ebee39457",
+    "candidate_sha256": "663e08b65383d5004fd56113d1a2204c76809181f92158922d7e4aa4b62bcc97",
+    "fixed_depth_6_score_rate": 0.465,
+    "edax_level_8_score_rate": 0.31,
+    "edax_level_8_mean_margin": -10.16
+  },
+  "iteration_2": {
+    "samples": 28655,
+    "source_tsv_sha256": "d3cd8b8b2073b5b313b061f2d1291aa4e48e57fc3351abbaac2c9f900db38ae1",
+    "dataset_metadata_sha256": "acfff98f41ac210a9822168a9f751492f642945c73ecddee4cbeed00d20167b2",
+    "base_model_sha256": "663e08b65383d5004fd56113d1a2204c76809181f92158922d7e4aa4b62bcc97",
+    "candidate_sha256": "11cb09756e2e933d9aae4983b80c88c7f1230308d52f0cf0b5c7e344fb2cd070",
+    "fixed_depth_6_score_rate": 0.5,
+    "fixed_depth_6_mean_margin": 1.47,
+    "edax_level_8_score_rate": 0.385,
+    "edax_level_8_mean_margin": -7.95,
+    "score_rate_difference_vs_current": 0.01,
+    "score_rate_difference_95_ci": [
+      -0.105,
+      0.125
+    ],
+    "mean_margin_difference_vs_current": 1.33,
+    "mean_margin_difference_95_ci": [
+      -1.96,
+      4.66025
+    ]
+  },
+  "training": {
+    "epochs": 80,
+    "patience": 10,
+    "learning_rate": 0.0002,
+    "huber_delta": 0.1,
+    "output_anchor": 0.5,
+    "l2": 0.000001,
+    "residual_clip": 1.0,
+    "device": "cuda",
+    "seed": 20260805
+  }
+}

@@ -5,6 +5,7 @@ public final class OthelloAI {
 
     private final SearchEngine searchEngine;
     private final OpeningBook openingBook;
+    private final ColorSelectableEvaluator colorSelectableEvaluator;
 
     public OthelloAI() {
         this(LearnedEvaluator.loadDefault(), 1 << 18);
@@ -20,11 +21,22 @@ public final class OthelloAI {
             new SearchEngine(
                 evaluator,
                 new TranspositionTable(ttEntries)
-            )
+            ),
+            evaluator instanceof ColorSelectableEvaluator
+                ? (ColorSelectableEvaluator) evaluator
+                : null
         );
     }
 
     OthelloAI(OpeningBook openingBook, SearchEngine searchEngine) {
+        this(openingBook, searchEngine, null);
+    }
+
+    private OthelloAI(
+        OpeningBook openingBook,
+        SearchEngine searchEngine,
+        ColorSelectableEvaluator colorSelectableEvaluator
+    ) {
         if (openingBook == null) {
             throw new NullPointerException("openingBook");
         }
@@ -33,6 +45,7 @@ public final class OthelloAI {
         }
         this.openingBook = openingBook;
         this.searchEngine = searchEngine;
+        this.colorSelectableEvaluator = colorSelectableEvaluator;
     }
 
     public SearchResult chooseMove(
@@ -89,6 +102,15 @@ public final class OthelloAI {
         return searchEngine.evaluatorDescription();
     }
 
+    public void selectPlayerColor(int color) {
+        if (colorSelectableEvaluator == null
+            || colorSelectableEvaluator.selectedColor() == color) {
+            return;
+        }
+        searchEngine.clearTranspositionTable();
+        colorSelectableEvaluator.selectColor(color);
+    }
+
     public void stop() {
         searchEngine.stop();
     }
@@ -102,6 +124,17 @@ public final class OthelloAI {
             throw new NullPointerException("evaluator");
         }
         return new OthelloAI(evaluator, ttEntries);
+    }
+
+    static OthelloAI create(
+        PositionEvaluator blackEvaluator,
+        PositionEvaluator whiteEvaluator,
+        int ttEntries
+    ) {
+        return new OthelloAI(
+            new ColorSelectableEvaluator(blackEvaluator, whiteEvaluator),
+            ttEntries
+        );
     }
 
     static PositionEvaluator loadEvaluator(Path path) {

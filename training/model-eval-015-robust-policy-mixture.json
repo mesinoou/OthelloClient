@@ -1,0 +1,57 @@
+{
+  "experiment": "EVAL-015",
+  "status": "candidate-rejected",
+  "candidate_sha256": "79bcc1e5263682759b33bf75da30a6d02577b3bc53c54c01c64e6f86c9ccce34",
+  "standard_model_sha256": "6e118c928729e003e89742d3b57fe6ed35fa9233a38dbe8af852041ebee39457",
+  "training": {
+    "teacher": "edax-level-9",
+    "sources": 3,
+    "source_balanced": true,
+    "robust_selection": "worst-source-validation-huber-ratio",
+    "output_anchor": 0.1,
+    "epochs": 640,
+    "patience": 60,
+    "device": "cuda",
+    "seed": 20260805
+  },
+  "best_epochs": [
+    640,
+    639,
+    238,
+    247
+  ],
+  "quantized_test_mse_reduction_percent": {
+    "current_leaves": 17.156,
+    "iteration_1_leaves": 18.349,
+    "iteration_2_leaves": 17.578
+  },
+  "matches": {
+    "depth_6_vs_current": {
+      "score_rate": 0.555,
+      "mean_margin": 2.53
+    },
+    "depth_8_vs_current": {
+      "score_rate": 0.51,
+      "mean_margin": 1.94
+    },
+    "edax_level_8": {
+      "score_rate": 0.36,
+      "mean_margin": -9.77,
+      "score_difference_vs_current": -0.015,
+      "score_difference_95_ci": [
+        -0.14,
+        0.115
+      ],
+      "margin_difference_vs_current": -0.49,
+      "margin_difference_95_ci": [
+        -4.65,
+        3.74
+      ]
+    }
+  },
+  "decision": {
+    "training_infrastructure_retained": true,
+    "runtime_model_changed": false,
+    "reason": "Robust leaf-value regression generalized across policy distributions but did not improve Edax match strength."
+  }
+}

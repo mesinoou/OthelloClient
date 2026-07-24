@@ -68,6 +68,12 @@ public final class TranspositionTable {
         }
     }
 
+    public synchronized void clear() {
+        Arrays.fill(occupied, (byte) 0);
+        Arrays.fill(generations, 0);
+        generation = 1;
+    }
+
     public long probe(long player, long opponent) {
         return probe(player, opponent, SCORE_MODE);
     }

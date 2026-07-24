@@ -1,0 +1,28 @@
+{
+  "candidate": ".training\\benchmarks\\tournament-white-20260724\\hybrid-book-l8-100-seed3.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.365,
+  "score_rate_95_ci": [
+    0.28,
+    0.45
+  ],
+  "mean_margin": -9.81,
+  "mean_margin_95_ci": [
+    -13.02,
+    -6.65
+  ],
+  "bootstrap_samples": 50000,
+  "seed": 20260907,
+  "baseline": ".training\\benchmarks\\tournament-white-20260724\\held-book-l8-100-seed3.txt",
+  "score_rate_difference": 0.03,
+  "score_rate_difference_95_ci": [
+    -0.05,
+    0.115
+  ],
+  "mean_margin_difference": -0.15,
+  "mean_margin_difference_95_ci": [
+    -2.96,
+    2.67
+  ]
+}

@@ -35,6 +35,13 @@ d'Othello WTHOR archives used to build `data/opening-book.bin`:
 - Games: 58,252
 - Archive SHA-256 values: see `dataset-v2.json`
 
+The model-independent v1 corpus uses the official 1977-2025 collection:
+
+- Archives: `WTH_7789.ZIP` plus annual `WTH_1990.ZIP` through `WTH_2025.ZIP`
+- Games: 137,548
+- Archive counts and SHA-256 values: see `wthor_sources.json`
+- Teacher data: the theoretical black score and header depth stored by WTHOR
+
 The official source invites users to download the database freely and
 describes evaluation tuning and opening-book preparation as intended uses. No
 separate redistribution license was found. The raw ZIP/WTB files therefore

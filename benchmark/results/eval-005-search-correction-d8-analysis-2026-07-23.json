@@ -1,0 +1,17 @@
+{
+  "candidate": "benchmark\\results\\eval-005-search-correction-d8-v-current-2026-07-23.txt",
+  "opening_pairs": 50,
+  "games": 100,
+  "score_rate": 0.54,
+  "score_rate_95_ci": [
+    0.46,
+    0.62
+  ],
+  "mean_margin": 0.2,
+  "mean_margin_95_ci": [
+    -2.69,
+    3.13
+  ],
+  "bootstrap_samples": 200000,
+  "seed": 20260805
+}

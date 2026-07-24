@@ -1,0 +1,82 @@
+{
+  "name": "pattern-evaluation-v4-teacher-cuda-e40",
+  "generated_on": "2026-07-22",
+  "dataset": "combined-evaluation-v4",
+  "training": {
+    "label": "teacher-filled",
+    "epochs": 40,
+    "patience": 7,
+    "batch_size": 4096,
+    "train_metrics_samples": 262144,
+    "learning_rate": 0.001,
+    "l2": 0.00001,
+    "seed": 20260720,
+    "amp": true,
+    "elapsed_seconds": 2142.2,
+    "backend": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "gpu": "NVIDIA GeForce RTX 3070 Ti"
+    }
+  },
+  "phases": [
+    {
+      "phase": 0,
+      "epochs_trained": 32,
+      "best_epoch": 25,
+      "best_validation_mse": 0.11579132246567912,
+      "test_mse": 0.12059126049280167,
+      "test_mae": 0.27512848377227783
+    },
+    {
+      "phase": 1,
+      "epochs_trained": 40,
+      "best_epoch": 40,
+      "best_validation_mse": 0.07300773204096266,
+      "test_mse": 0.07514510303735733,
+      "test_mae": 0.21072804927825928
+    },
+    {
+      "phase": 2,
+      "epochs_trained": 38,
+      "best_epoch": 31,
+      "best_validation_mse": 0.050968339835919294,
+      "test_mse": 0.05173353850841522,
+      "test_mae": 0.17378972470760345
+    },
+    {
+      "phase": 3,
+      "epochs_trained": 40,
+      "best_epoch": 40,
+      "best_validation_mse": 0.028776872368177154,
+      "test_mse": 0.03019050508737564,
+      "test_mae": 0.13285696506500244
+    }
+  ],
+  "quantization": {
+    "dtype": "int16",
+    "score_scale": 6400,
+    "clipped_entries": 0,
+    "java_test": "PASS",
+    "java_benchmark_ns_per_eval": 651.6,
+    "java_benchmark_evals_per_second": 1534647
+  },
+  "files": {
+    "evaluation-tables.bin": {
+      "bytes": 1405604,
+      "sha256": "89a941fd98b2095905c9d1e2e0ad5547a96a67d5c0142c70897012cc91df8247"
+    },
+    "evaluation-tables.npz": {
+      "bytes": 1085803,
+      "sha256": "066a43c87b4175d95ba292c0b10da40e821309babff0eee7b3a0a5152ad2a483"
+    },
+    "model-float.npz": {
+      "bytes": 114839,
+      "sha256": "8cf2ee4c2bc72086254231e6617eb7cefc765e765351c9ddb3e0befe6613186d"
+    },
+    "metadata.json": {
+      "bytes": 42240,
+      "sha256": "776c58605636ecffcdafe922bcc29da25f130260d1475bbbb95a25fcab88928b"
+    }
+  }
+}

@@ -1,4 +1,7 @@
+import java.io.BufferedWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -39,67 +42,103 @@ public final class EvaluationMatchRunner {
 
     private static void run(Settings settings) throws IOException {
         PositionEvaluator learned = LearnedEvaluator.load(settings.modelPath);
+        PositionEvaluator whiteLearned =
+            settings.whiteModelPath == null
+                ? learned
+                : LearnedEvaluator.load(settings.whiteModelPath);
+        PositionEvaluator modelOpponent = settings.opponent == Opponent.MODEL
+            ? LearnedEvaluator.load(settings.opponentModelPath)
+            : null;
+        OpeningBook openingBook = settings.openingBookPath == null
+            ? OpeningBook.empty()
+            : OpeningBook.load(settings.openingBookPath);
         List<Opening> openings = generateOpenings(
             settings.pairs,
             settings.openingPlies,
             settings.openingSeed
         );
+        List<Integer> openingIndices = settings.selectedOpeningIndices();
+        int totalGames = openingIndices.size() * settings.learnedColors.length;
         MatchStatistics statistics = new MatchStatistics(settings);
 
         System.out.println("evaluation match");
-        System.out.println("model=" + learned.description());
+        System.out.println("blackModel=" + learned.description());
+        System.out.println("whiteModel=" + whiteLearned.description());
         System.out.println(
             "opponent=" + settings.opponent
                 + (settings.opponent == Opponent.EDAX
                     ? ", edaxLevel=" + settings.edaxLevel
-                    : "")
+                    : settings.opponent == Opponent.MODEL
+                        ? ", model=" + modelOpponent.description()
+                        : "")
         );
         System.out.println(
             "pairs=" + settings.pairs
-                + ", games=" + settings.pairs * 2
+                + ", selectedOpenings=" + openingIndices.size()
+                + ", games=" + totalGames
                 + ", openingPlies=" + settings.openingPlies
                 + ", openingSeed=" + settings.openingSeed
+                + ", learnedColors=" + settings.learnedColorArgument
         );
         System.out.println(
             "searchTimeMillis=" + settings.timeMillis
                 + ", maxDepth=" + settings.maxDepth
                 + ", threads=" + settings.threads
                 + ", ponderMillis=" + settings.ponderMillis
-                + ", openingBook=off"
+                + ", multiProbCut="
+                + (settings.opponent == Opponent.MODEL
+                    ? "off(model-match)"
+                    : settings.multiProbCutEnabled)
+                + ", openingBook="
+                + (settings.openingBookPath == null
+                    ? "off"
+                    : settings.openingBookPath)
+                + ", trace="
+                + (settings.tracePath == null ? "off" : settings.tracePath)
         );
 
         int gameNumber = 0;
-        for (int openingIndex = 0;
-            openingIndex < openings.size();
-            openingIndex++) {
-            Opening opening = openings.get(openingIndex);
-            for (int learnedColor : new int[] {1, -1}) {
-                gameNumber++;
-                GameRun run = playOneGame(
-                    settings,
-                    learned,
-                    opening,
-                    learnedColor
-                );
-                statistics.add(run);
-                String outcome = run.learnedMargin > 0
-                    ? "WIN"
-                    : run.learnedMargin < 0 ? "LOSS" : "DRAW";
-                System.out.printf(
-                    Locale.ROOT,
-                    "game=%d/%d opening=%d learned=%s result=%s "
-                        + "margin=%+d discs=%d-%d moves=%d elapsed=%.3fs%n",
-                    gameNumber,
-                    settings.pairs * 2,
-                    openingIndex + 1,
-                    colorName(learnedColor),
-                    outcome,
-                    run.learnedMargin,
-                    run.blackDiscs,
-                    run.whiteDiscs,
-                    run.moves,
-                    run.elapsedNanos / 1_000_000_000.0
-                );
+        try (MatchTraceWriter traceWriter =
+            MatchTraceWriter.open(settings.tracePath)) {
+            for (int openingIndex : openingIndices) {
+                Opening opening = openings.get(openingIndex);
+                for (int learnedColor : settings.learnedColors) {
+                    gameNumber++;
+                    GameRun run = playOneGame(
+                        settings,
+                        learned,
+                        whiteLearned,
+                        modelOpponent,
+                        opening,
+                        learnedColor,
+                        openingBook
+                    );
+                    statistics.add(run);
+                    traceWriter.writeGame(
+                        gameNumber,
+                        openingIndex + 1,
+                        learnedColor,
+                        run
+                    );
+                    String outcome = run.learnedMargin > 0
+                        ? "WIN"
+                        : run.learnedMargin < 0 ? "LOSS" : "DRAW";
+                    System.out.printf(
+                        Locale.ROOT,
+                        "game=%d/%d opening=%d learned=%s result=%s "
+                            + "margin=%+d discs=%d-%d moves=%d elapsed=%.3fs%n",
+                        gameNumber,
+                        totalGames,
+                        openingIndex + 1,
+                        colorName(learnedColor),
+                        outcome,
+                        run.learnedMargin,
+                        run.blackDiscs,
+                        run.whiteDiscs,
+                        run.moves,
+                        run.elapsedNanos / 1_000_000_000.0
+                    );
+                }
             }
         }
         statistics.print();
@@ -107,19 +146,27 @@ public final class EvaluationMatchRunner {
 
     private static GameRun playOneGame(
         Settings settings,
-        PositionEvaluator learnedEvaluator,
+        PositionEvaluator blackLearnedEvaluator,
+        PositionEvaluator whiteLearnedEvaluator,
+        PositionEvaluator modelOpponent,
         Opening opening,
-        int learnedColor
+        int learnedColor,
+        OpeningBook openingBook
     ) throws IOException {
+        PositionEvaluator learnedEvaluator = learnedColor == 1
+            ? blackLearnedEvaluator
+            : whiteLearnedEvaluator;
         SearchMatchPlayer learned = new SearchMatchPlayer(
             "learned",
             learnedColor,
             learnedEvaluator,
-            settings
+            settings,
+            openingBook
         );
         MatchPlayer opponent = createOpponent(
             settings,
             -learnedColor,
+            modelOpponent,
             opening
         );
         MatchPlayer black = learnedColor == 1 ? learned : opponent;
@@ -129,6 +176,9 @@ public final class EvaluationMatchRunner {
             BitBoardPosition position = opening.position;
             int color = opening.nextColor;
             int moves = opening.moves.size();
+            List<MoveTrace> moveTraces = settings.tracePath == null
+                ? null
+                : new ArrayList<>();
 
             while (true) {
                 long player = position.player(color);
@@ -146,6 +196,7 @@ public final class EvaluationMatchRunner {
                 if (color != learnedColor) {
                     learned.ponder(position, color);
                 }
+                BitBoardPosition before = position;
                 int square = current.chooseMove(position, color);
                 if (square < 0
                     || square >= 64
@@ -156,6 +207,17 @@ public final class EvaluationMatchRunner {
                     );
                 }
                 position = apply(position, color, square);
+                if (moveTraces != null) {
+                    moveTraces.add(new MoveTrace(
+                        moves,
+                        before,
+                        position,
+                        color,
+                        current.name(),
+                        square,
+                        current.lastDecision()
+                    ));
+                }
                 black.observeMove(color, square);
                 white.observeMove(color, square);
                 moves++;
@@ -172,7 +234,8 @@ public final class EvaluationMatchRunner {
                 moves,
                 System.nanoTime() - started,
                 learned.metrics(),
-                opponent.metrics()
+                opponent.metrics(),
+                moveTraces
             );
         } finally {
             learned.close();
@@ -183,6 +246,7 @@ public final class EvaluationMatchRunner {
     private static MatchPlayer createOpponent(
         Settings settings,
         int assignedColor,
+        PositionEvaluator modelOpponent,
         Opening opening
     ) throws IOException {
         if (settings.opponent == Opponent.HANDCRAFTED) {
@@ -190,14 +254,25 @@ public final class EvaluationMatchRunner {
                 "handcrafted",
                 assignedColor,
                 new Evaluator(),
-                settings
+                settings,
+                OpeningBook.empty()
+            );
+        }
+        if (settings.opponent == Opponent.MODEL) {
+            return new SearchMatchPlayer(
+                "opponentModel",
+                assignedColor,
+                modelOpponent,
+                settings,
+                OpeningBook.empty()
             );
         }
         return new EdaxMatchPlayer(
             assignedColor,
             settings.edaxLevel,
             settings.threads,
-            opening
+            opening,
+            settings.tracePath != null
         );
     }
 
@@ -277,6 +352,7 @@ public final class EvaluationMatchRunner {
 
     private enum Opponent {
         HANDCRAFTED,
+        MODEL,
         EDAX
     }
 
@@ -289,6 +365,8 @@ public final class EvaluationMatchRunner {
 
         PlayerMetrics metrics();
 
+        MoveDecision lastDecision();
+
         @Override
         void close();
     }
@@ -299,19 +377,34 @@ public final class EvaluationMatchRunner {
         private final SearchEngine engine;
         private final SearchLimits limits;
         private final SearchLimits ponderLimits;
+        private final OpeningBook openingBook;
         private final PlayerMetrics metrics = new PlayerMetrics(true);
+        private final boolean traceEnabled;
+        private MoveDecision lastDecision;
 
         private SearchMatchPlayer(
             String name,
             int assignedColor,
             PositionEvaluator evaluator,
-            Settings settings
+            Settings settings,
+            OpeningBook openingBook
         ) {
             this.name = name;
             this.assignedColor = assignedColor;
+            this.openingBook = openingBook;
+            traceEnabled = settings.tracePath != null;
+            TranspositionTable table = new TranspositionTable(TABLE_CAPACITY);
             engine = new SearchEngine(
                 evaluator,
-                new TranspositionTable(TABLE_CAPACITY)
+                table,
+                true,
+                0,
+                true,
+                true,
+                true,
+                settings.opponent != Opponent.MODEL
+                    && settings.multiProbCutEnabled,
+                true
             );
             limits = new SearchLimits(
                 settings.timeMillis,
@@ -337,9 +430,20 @@ public final class EvaluationMatchRunner {
             if (color != assignedColor) {
                 throw new IllegalArgumentException("search player color mismatch");
             }
+            OpeningBookMove bookMove = openingBook.find(position, color);
+            if (bookMove != null) {
+                metrics.addBookMove();
+                if (traceEnabled) {
+                    lastDecision = MoveDecision.book(bookMove);
+                }
+                return bookMove.square();
+            }
             boolean initialTtHit = engine.hasTransposition(position, color);
             SearchResult result = engine.search(position, color, limits);
             metrics.add(result, initialTtHit);
+            if (traceEnabled) {
+                lastDecision = MoveDecision.search(result);
+            }
             return result.bestSquare();
         }
 
@@ -361,6 +465,11 @@ public final class EvaluationMatchRunner {
         }
 
         @Override
+        public MoveDecision lastDecision() {
+            return lastDecision;
+        }
+
+        @Override
         public void close() {
             engine.shutdown();
         }
@@ -370,14 +479,18 @@ public final class EvaluationMatchRunner {
         private final int assignedColor;
         private final EdaxGtpEngine engine;
         private final PlayerMetrics metrics = new PlayerMetrics(false);
+        private final boolean traceEnabled;
+        private MoveDecision lastDecision;
 
         private EdaxMatchPlayer(
             int assignedColor,
             int level,
             int threads,
-            Opening opening
+            Opening opening,
+            boolean traceEnabled
         ) throws IOException {
             this.assignedColor = assignedColor;
+            this.traceEnabled = traceEnabled;
             engine = new EdaxGtpEngine(
                 EDAX_EXECUTABLE,
                 EDAX_EVALUATION,
@@ -402,7 +515,11 @@ public final class EvaluationMatchRunner {
             }
             long started = System.nanoTime();
             int square = engine.generateMove(color);
-            metrics.addExternal(System.nanoTime() - started);
+            long elapsedNanos = System.nanoTime() - started;
+            metrics.addExternal(elapsedNanos);
+            if (traceEnabled) {
+                lastDecision = MoveDecision.external(elapsedNanos);
+            }
             return square;
         }
 
@@ -419,8 +536,294 @@ public final class EvaluationMatchRunner {
         }
 
         @Override
+        public MoveDecision lastDecision() {
+            return lastDecision;
+        }
+
+        @Override
         public void close() {
             engine.close();
+        }
+    }
+
+    private static final class MoveDecision {
+        private final String source;
+        private final boolean search;
+        private final int score;
+        private final int completedDepth;
+        private final long nodes;
+        private final long elapsedNanos;
+        private final boolean timedOut;
+        private final boolean exactSolution;
+        private final int endgameEmpties;
+        private final boolean wldSearch;
+        private final boolean wldSolution;
+        private final int bookEvaluation;
+        private final int bookGames;
+        private final int bookWinRatePermille;
+
+        private MoveDecision(
+            String source,
+            boolean search,
+            int score,
+            int completedDepth,
+            long nodes,
+            long elapsedNanos,
+            boolean timedOut,
+            boolean exactSolution,
+            int endgameEmpties,
+            boolean wldSearch,
+            boolean wldSolution,
+            int bookEvaluation,
+            int bookGames,
+            int bookWinRatePermille
+        ) {
+            this.source = source;
+            this.search = search;
+            this.score = score;
+            this.completedDepth = completedDepth;
+            this.nodes = nodes;
+            this.elapsedNanos = elapsedNanos;
+            this.timedOut = timedOut;
+            this.exactSolution = exactSolution;
+            this.endgameEmpties = endgameEmpties;
+            this.wldSearch = wldSearch;
+            this.wldSolution = wldSolution;
+            this.bookEvaluation = bookEvaluation;
+            this.bookGames = bookGames;
+            this.bookWinRatePermille = bookWinRatePermille;
+        }
+
+        private static MoveDecision book(OpeningBookMove move) {
+            return new MoveDecision(
+                "book",
+                false,
+                0,
+                0,
+                0L,
+                0L,
+                false,
+                false,
+                0,
+                false,
+                false,
+                move.evaluation(),
+                move.games(),
+                move.winRatePermille()
+            );
+        }
+
+        private static MoveDecision search(SearchResult result) {
+            return new MoveDecision(
+                "search",
+                true,
+                result.score(),
+                result.completedDepth(),
+                result.nodes(),
+                result.elapsedNanos(),
+                result.timedOut(),
+                result.exactSolution(),
+                result.endgameEmpties(),
+                result.wldSearch(),
+                result.wldSolution(),
+                0,
+                0,
+                0
+            );
+        }
+
+        private static MoveDecision external(long elapsedNanos) {
+            return new MoveDecision(
+                "edax",
+                false,
+                0,
+                0,
+                0L,
+                elapsedNanos,
+                false,
+                false,
+                0,
+                false,
+                false,
+                0,
+                0,
+                0
+            );
+        }
+    }
+
+    private static final class MoveTrace {
+        private final int ply;
+        private final BitBoardPosition position;
+        private final BitBoardPosition child;
+        private final int player;
+        private final String actor;
+        private final int square;
+        private final MoveDecision decision;
+
+        private MoveTrace(
+            int ply,
+            BitBoardPosition position,
+            BitBoardPosition child,
+            int player,
+            String actor,
+            int square,
+            MoveDecision decision
+        ) {
+            this.ply = ply;
+            this.position = position;
+            this.child = child;
+            this.player = player;
+            this.actor = actor;
+            this.square = square;
+            this.decision = decision;
+        }
+    }
+
+    private static final class MatchTraceWriter implements AutoCloseable {
+        private static final String HEADER =
+            "game\topening\tlearned_color\toutcome\tmargin\tply"
+                + "\tblack\twhite\tchild_black\tchild_white\tplayer"
+                + "\tactor\tmove\tsource\tsearch_score\tcompleted_depth"
+                + "\tnodes\telapsed_ms\ttimed_out\texact_solution"
+                + "\tendgame_empties\twld_search\twld_solution"
+                + "\tbook_evaluation\tbook_games\tbook_win_rate_permille";
+
+        private final BufferedWriter output;
+
+        private MatchTraceWriter(BufferedWriter output) throws IOException {
+            this.output = output;
+            if (output != null) {
+                output.write(HEADER);
+                output.newLine();
+            }
+        }
+
+        private static MatchTraceWriter open(Path path) throws IOException {
+            if (path == null) {
+                return new MatchTraceWriter(null);
+            }
+            Path absolute = path.toAbsolutePath().normalize();
+            if (Files.exists(absolute)) {
+                throw new IllegalArgumentException(
+                    "trace output already exists: " + absolute
+                );
+            }
+            Path parent = absolute.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            return new MatchTraceWriter(Files.newBufferedWriter(
+                absolute,
+                StandardCharsets.UTF_8
+            ));
+        }
+
+        private void writeGame(
+            int game,
+            int opening,
+            int learnedColor,
+            GameRun run
+        ) throws IOException {
+            if (output == null) {
+                return;
+            }
+            String outcome = run.learnedMargin > 0
+                ? "WIN"
+                : run.learnedMargin < 0 ? "LOSS" : "DRAW";
+            for (MoveTrace trace : run.moveTraces) {
+                MoveDecision decision = trace.decision;
+                output.write(Integer.toString(game));
+                output.write('\t');
+                output.write(Integer.toString(opening));
+                output.write('\t');
+                output.write(colorName(learnedColor));
+                output.write('\t');
+                output.write(outcome);
+                output.write('\t');
+                output.write(Integer.toString(run.learnedMargin));
+                output.write('\t');
+                output.write(Integer.toString(trace.ply));
+                output.write('\t');
+                output.write(hex(trace.position.black()));
+                output.write('\t');
+                output.write(hex(trace.position.white()));
+                output.write('\t');
+                output.write(hex(trace.child.black()));
+                output.write('\t');
+                output.write(hex(trace.child.white()));
+                output.write('\t');
+                output.write(colorName(trace.player));
+                output.write('\t');
+                output.write(trace.actor);
+                output.write('\t');
+                output.write(Integer.toString(trace.square));
+                output.write('\t');
+                output.write(decision.source);
+                output.write('\t');
+                output.write(decision.search
+                    ? Integer.toString(decision.score)
+                    : "");
+                output.write('\t');
+                output.write(decision.search
+                    ? Integer.toString(decision.completedDepth)
+                    : "");
+                output.write('\t');
+                output.write(decision.search
+                    ? Long.toString(decision.nodes)
+                    : "");
+                output.write('\t');
+                output.write(String.format(
+                    Locale.ROOT,
+                    "%.3f",
+                    decision.elapsedNanos / 1_000_000.0
+                ));
+                output.write('\t');
+                output.write(decision.search
+                    ? Boolean.toString(decision.timedOut)
+                    : "");
+                output.write('\t');
+                output.write(decision.search
+                    ? Boolean.toString(decision.exactSolution)
+                    : "");
+                output.write('\t');
+                output.write(decision.search
+                    ? Integer.toString(decision.endgameEmpties)
+                    : "");
+                output.write('\t');
+                output.write(decision.search
+                    ? Boolean.toString(decision.wldSearch)
+                    : "");
+                output.write('\t');
+                output.write(decision.search
+                    ? Boolean.toString(decision.wldSolution)
+                    : "");
+                output.write('\t');
+                output.write("book".equals(decision.source)
+                    ? Integer.toString(decision.bookEvaluation)
+                    : "");
+                output.write('\t');
+                output.write("book".equals(decision.source)
+                    ? Integer.toString(decision.bookGames)
+                    : "");
+                output.write('\t');
+                output.write("book".equals(decision.source)
+                    ? Integer.toString(decision.bookWinRatePermille)
+                    : "");
+                output.newLine();
+            }
+            output.flush();
+        }
+
+        private static String hex(long value) {
+            return String.format(Locale.ROOT, "%016x", value);
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (output != null) {
+                output.close();
+            }
         }
     }
 
@@ -437,6 +840,7 @@ public final class EvaluationMatchRunner {
         private long wldNodes;
         private long wldElapsedNanos;
         private long initialTtHits;
+        private long bookMoves;
         private long ponderMoves;
         private long ponderElapsedNanos;
         private long ponderNodes;
@@ -482,6 +886,11 @@ public final class EvaluationMatchRunner {
             elapsedNanos += elapsed;
         }
 
+        private void addBookMove() {
+            moves++;
+            bookMoves++;
+        }
+
         private void merge(PlayerMetrics other) {
             moves += other.moves;
             elapsedNanos += other.elapsedNanos;
@@ -494,6 +903,7 @@ public final class EvaluationMatchRunner {
             wldNodes += other.wldNodes;
             wldElapsedNanos += other.wldElapsedNanos;
             initialTtHits += other.initialTtHits;
+            bookMoves += other.bookMoves;
             ponderMoves += other.ponderMoves;
             ponderElapsedNanos += other.ponderElapsedNanos;
             ponderNodes += other.ponderNodes;
@@ -522,7 +932,7 @@ public final class EvaluationMatchRunner {
                     Locale.ROOT,
                     " avgDepth=%.2f nodes=%d nodesPerSecond=%.0f "
                         + "budgetStops=%d exactMoves=%d initialTtHits=%d "
-                        + "wldAttempts=%d wldSolutions=%d wldNodes=%d "
+                        + "bookMoves=%d wldAttempts=%d wldSolutions=%d wldNodes=%d "
                         + "wldSeconds=%.3f",
                     averageDepth,
                     nodes,
@@ -530,6 +940,7 @@ public final class EvaluationMatchRunner {
                     budgetStops,
                     exactMoves,
                     initialTtHits,
+                    bookMoves,
                     wldAttempts,
                     wldSolutions,
                     wldNodes,
@@ -565,7 +976,7 @@ public final class EvaluationMatchRunner {
         private MatchStatistics(Settings settings) {
             this.settings = settings;
             opponent = new PlayerMetrics(
-                settings.opponent == Opponent.HANDCRAFTED
+                settings.opponent != Opponent.EDAX
             );
         }
 
@@ -607,13 +1018,17 @@ public final class EvaluationMatchRunner {
             opponent.print(
                 settings.opponent == Opponent.HANDCRAFTED
                     ? "handcrafted"
-                    : "edax"
+                    : settings.opponent == Opponent.MODEL
+                        ? "opponentModel"
+                        : "edax"
             );
         }
     }
 
     private static final class Settings {
         private final Path modelPath;
+        private final Path whiteModelPath;
+        private final Path opponentModelPath;
         private final Opponent opponent;
         private final int pairs;
         private final int openingPlies;
@@ -623,9 +1038,17 @@ public final class EvaluationMatchRunner {
         private final int edaxLevel;
         private final long openingSeed;
         private final long ponderMillis;
+        private final boolean multiProbCutEnabled;
+        private final Path openingBookPath;
+        private final Path tracePath;
+        private final int[] learnedColors;
+        private final String learnedColorArgument;
+        private final List<Integer> openingIndices;
 
         private Settings(
             Path modelPath,
+            Path whiteModelPath,
+            Path opponentModelPath,
             Opponent opponent,
             int pairs,
             int openingPlies,
@@ -634,9 +1057,17 @@ public final class EvaluationMatchRunner {
             int threads,
             int edaxLevel,
             long openingSeed,
-            long ponderMillis
+            long ponderMillis,
+            boolean multiProbCutEnabled,
+            Path openingBookPath,
+            Path tracePath,
+            int[] learnedColors,
+            String learnedColorArgument,
+            List<Integer> openingIndices
         ) {
             this.modelPath = modelPath;
+            this.whiteModelPath = whiteModelPath;
+            this.opponentModelPath = opponentModelPath;
             this.opponent = opponent;
             this.pairs = pairs;
             this.openingPlies = openingPlies;
@@ -646,26 +1077,40 @@ public final class EvaluationMatchRunner {
             this.edaxLevel = edaxLevel;
             this.openingSeed = openingSeed;
             this.ponderMillis = ponderMillis;
+            this.multiProbCutEnabled = multiProbCutEnabled;
+            this.openingBookPath = openingBookPath;
+            this.tracePath = tracePath;
+            this.learnedColors = learnedColors;
+            this.learnedColorArgument = learnedColorArgument;
+            this.openingIndices = openingIndices;
         }
 
         private static Settings parse(String[] args) {
-            if (args.length < 2 || args.length > 10) {
+            if (args.length < 2 || args.length > 16) {
                 throw new IllegalArgumentException(
                     "Usage: java EvaluationMatchRunner <model> "
-                        + "<handcrafted|edax> [pairs] [openingPlies] "
+                        + "<handcrafted|edax|model=path> [pairs] "
+                        + "[openingPlies] "
                         + "[timeMillis] [maxDepth] [threads] [edaxLevel] "
-                        + "[openingSeed] [ponderMillis]"
+                        + "[openingSeed] [ponderMillis] [multiProbCut] "
+                        + "[openingBook|off] [whiteModel|same] [traceTsv|off] "
+                        + "[both|black|white] [openingNumbers|all]"
                 );
             }
             Path modelPath = Paths.get(args[0]);
             Opponent opponent;
+            Path opponentModelPath = null;
             if ("handcrafted".equalsIgnoreCase(args[1])) {
                 opponent = Opponent.HANDCRAFTED;
             } else if ("edax".equalsIgnoreCase(args[1])) {
                 opponent = Opponent.EDAX;
+            } else if (args[1].regionMatches(true, 0, "model=", 0, 6)
+                && args[1].length() > 6) {
+                opponent = Opponent.MODEL;
+                opponentModelPath = Paths.get(args[1].substring(6));
             } else {
                 throw new IllegalArgumentException(
-                    "opponent must be handcrafted or edax"
+                    "opponent must be handcrafted, edax, or model=path"
                 );
             }
             int pairs = integerArg(args, 2, 10);
@@ -676,6 +1121,38 @@ public final class EvaluationMatchRunner {
             int edaxLevel = integerArg(args, 7, 4);
             long openingSeed = longArg(args, 8, DEFAULT_OPENING_SEED);
             long ponderMillis = longArg(args, 9, 0L);
+            boolean multiProbCutEnabled = booleanArg(args, 10, true);
+            Path openingBookPath = args.length <= 11
+                || "off".equalsIgnoreCase(args[11])
+                    ? null
+                    : Paths.get(args[11]);
+            Path whiteModelPath = args.length <= 12
+                || "same".equalsIgnoreCase(args[12])
+                    ? null
+                    : Paths.get(args[12]);
+            Path tracePath = args.length <= 13
+                || "off".equalsIgnoreCase(args[13])
+                    ? null
+                    : Paths.get(args[13]);
+            String learnedColorArgument = args.length <= 14
+                ? "both"
+                : args[14].toLowerCase(Locale.ROOT);
+            int[] learnedColors;
+            if ("both".equals(learnedColorArgument)) {
+                learnedColors = new int[] {1, -1};
+            } else if ("black".equals(learnedColorArgument)) {
+                learnedColors = new int[] {1};
+            } else if ("white".equals(learnedColorArgument)) {
+                learnedColors = new int[] {-1};
+            } else {
+                throw new IllegalArgumentException(
+                    "learned color must be both, black, or white"
+                );
+            }
+            List<Integer> openingIndices = parseOpeningIndices(
+                args.length <= 15 ? "all" : args[15],
+                pairs
+            );
             if (pairs < 1 || pairs > 1000) {
                 throw new IllegalArgumentException("pairs must be 1..1000");
             }
@@ -705,6 +1182,8 @@ public final class EvaluationMatchRunner {
             }
             return new Settings(
                 modelPath,
+                whiteModelPath,
+                opponentModelPath,
                 opponent,
                 pairs,
                 openingPlies,
@@ -713,8 +1192,52 @@ public final class EvaluationMatchRunner {
                 threads,
                 edaxLevel,
                 openingSeed,
-                ponderMillis
+                ponderMillis,
+                multiProbCutEnabled,
+                openingBookPath,
+                tracePath,
+                learnedColors,
+                learnedColorArgument,
+                openingIndices
             );
+        }
+
+        private List<Integer> selectedOpeningIndices() {
+            if (openingIndices != null) {
+                return openingIndices;
+            }
+            List<Integer> all = new ArrayList<>(pairs);
+            for (int index = 0; index < pairs; index++) {
+                all.add(index);
+            }
+            return all;
+        }
+
+        private static List<Integer> parseOpeningIndices(
+            String argument,
+            int pairs
+        ) {
+            if ("all".equalsIgnoreCase(argument)) {
+                return null;
+            }
+            Set<Integer> selected = new HashSet<>();
+            for (String token : argument.split(",")) {
+                int opening = Integer.parseInt(token);
+                if (opening < 1 || opening > pairs) {
+                    throw new IllegalArgumentException(
+                        "opening number must be 1.." + pairs
+                    );
+                }
+                selected.add(opening - 1);
+            }
+            if (selected.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "at least one opening number is required"
+                );
+            }
+            List<Integer> sorted = new ArrayList<>(selected);
+            sorted.sort(Integer::compareTo);
+            return sorted;
         }
 
         private static int integerArg(
@@ -735,6 +1258,25 @@ public final class EvaluationMatchRunner {
             return args.length > index
                 ? Long.parseLong(args[index])
                 : defaultValue;
+        }
+
+        private static boolean booleanArg(
+            String[] args,
+            int index,
+            boolean defaultValue
+        ) {
+            if (args.length <= index) {
+                return defaultValue;
+            }
+            if ("true".equalsIgnoreCase(args[index])) {
+                return true;
+            }
+            if ("false".equalsIgnoreCase(args[index])) {
+                return false;
+            }
+            throw new IllegalArgumentException(
+                "boolean argument must be true or false"
+            );
         }
     }
 
@@ -772,6 +1314,7 @@ public final class EvaluationMatchRunner {
         private final long elapsedNanos;
         private final PlayerMetrics learnedMetrics;
         private final PlayerMetrics opponentMetrics;
+        private final List<MoveTrace> moveTraces;
 
         private GameRun(
             int learnedMargin,
@@ -780,7 +1323,8 @@ public final class EvaluationMatchRunner {
             int moves,
             long elapsedNanos,
             PlayerMetrics learnedMetrics,
-            PlayerMetrics opponentMetrics
+            PlayerMetrics opponentMetrics,
+            List<MoveTrace> moveTraces
         ) {
             this.learnedMargin = learnedMargin;
             this.blackDiscs = blackDiscs;
@@ -789,6 +1333,7 @@ public final class EvaluationMatchRunner {
             this.elapsedNanos = elapsedNanos;
             this.learnedMetrics = learnedMetrics;
             this.opponentMetrics = opponentMetrics;
+            this.moveTraces = moveTraces;
         }
     }
 }

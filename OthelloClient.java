@@ -267,6 +267,7 @@ public final class OthelloClient {
         }
 
         stopSearch();
+        ai.selectPlayerColor(color);
         synchronized (stateLock) {
             myColor = color;
             currentTurn = 0;
@@ -284,6 +285,7 @@ public final class OthelloClient {
         System.out.println(
             "ゲーム開始: あなたは" + colorName(color) + "です。"
         );
+        System.out.println("対局評価関数: " + ai.evaluatorDescription());
     }
 
     private void processBoard(String message) {
@@ -890,16 +892,28 @@ public final class OthelloClient {
             PositionEvaluator evaluator = OthelloAI.loadEvaluator(
                 options.evaluationModel
             );
+            PositionEvaluator blackEvaluator =
+                options.blackEvaluationModel == null
+                    ? evaluator
+                    : OthelloAI.loadEvaluator(options.blackEvaluationModel);
+            PositionEvaluator whiteEvaluator =
+                options.whiteEvaluationModel == null
+                    ? evaluator
+                    : OthelloAI.loadEvaluator(options.whiteEvaluationModel);
             RuntimeConfiguration runtime = RuntimeConfiguration.resolve(
-                evaluator,
+                blackEvaluator,
                 options.threadSpec,
                 options.ttSpec
             );
             runtime.print(System.out);
-            OthelloAI ai = OthelloAI.create(
-                evaluator,
-                runtime.ttEntries()
-            );
+            OthelloAI ai = options.blackEvaluationModel == null
+                    && options.whiteEvaluationModel == null
+                ? OthelloAI.create(evaluator, runtime.ttEntries())
+                : OthelloAI.create(
+                    blackEvaluator,
+                    whiteEvaluator,
+                    runtime.ttEntries()
+                );
             System.out.println(
                 "サーバに接続を試みます: "
                     + options.host + ":" + options.port

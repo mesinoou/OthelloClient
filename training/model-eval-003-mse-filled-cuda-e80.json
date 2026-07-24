@@ -1,0 +1,94 @@
+{
+  "name": "eval-003-mse-filled-cuda-e80",
+  "generated_at_utc": "2026-07-22T14:06:21.149169+00:00",
+  "dataset": "combined-evaluation-v4",
+  "code": "b4fb97e",
+  "training": {
+    "loss": "mse",
+    "label": "filled",
+    "epochs": 80,
+    "patience": 10,
+    "batch_size": 4096,
+    "train_metrics_samples": 262144,
+    "learning_rate": 0.001,
+    "l2": 0.00001,
+    "seed": 20260720,
+    "amp": true,
+    "elapsed_seconds": 2954.7,
+    "backend": {
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "gpu": "NVIDIA GeForce RTX 3070 Ti"
+    }
+  },
+  "phases": [
+    {
+      "phase": 0,
+      "epochs_trained": 51,
+      "best_epoch": 41,
+      "best_validation_loss": 0.11576637030818458,
+      "test_mse": 0.1204283127398842,
+      "test_mae": 0.27484244893312515,
+      "test_wld_log_loss": 0.6236230544984387,
+      "test_wld_brier": 0.1978577120739006
+    },
+    {
+      "phase": 1,
+      "epochs_trained": 68,
+      "best_epoch": 58,
+      "best_validation_loss": 0.0785390172879659,
+      "test_mse": 0.08090978660435481,
+      "test_mae": 0.22159538047823854,
+      "test_wld_log_loss": 0.5872818752051577,
+      "test_wld_brier": 0.1850097989138211
+    },
+    {
+      "phase": 2,
+      "epochs_trained": 77,
+      "best_epoch": 67,
+      "best_validation_loss": 0.050719342825222814,
+      "test_mse": 0.051593863281087705,
+      "test_mae": 0.1734409081702605,
+      "test_wld_log_loss": 0.5388348017678342,
+      "test_wld_brier": 0.16302605919439944
+    },
+    {
+      "phase": 3,
+      "epochs_trained": 74,
+      "best_epoch": 64,
+      "best_validation_loss": 0.028542515238432205,
+      "test_mse": 0.02996030590925239,
+      "test_mae": 0.132443618509982,
+      "test_wld_log_loss": 0.5039925741716346,
+      "test_wld_brier": 0.14707272242825453
+    }
+  ],
+  "quantization": {
+    "dtype": "int16",
+    "score_scale": 6400,
+    "score_divisor": 1,
+    "maximum_absolute_score_bound": 60931,
+    "clipped_entries": 0,
+    "java_test": "PASS",
+    "java_benchmark_ns_per_eval": 414.0,
+    "java_benchmark_evals_per_second": 2415367
+  },
+  "files": {
+    "evaluation-tables.bin": {
+      "bytes": 1405604,
+      "sha256": "1f435e449f899e52d964c1335722ec352878488b3bd333c3ca1f910dfdb76a91"
+    },
+    "evaluation-tables.npz": {
+      "bytes": 1083992,
+      "sha256": "aada4920eb23019c99d841615cb85cc275a843b28b568c545e5d862dc9eefcd3"
+    },
+    "model-float.npz": {
+      "bytes": 114991,
+      "sha256": "49caf258088f2343d9273c75cd2e8298ca332ff3fd9106ff2ae29351c8b1e16b"
+    },
+    "metadata.json": {
+      "bytes": 156596,
+      "sha256": "45b229b2b9b4c1091ce3b1bbba55981a1750516bb151d5637c1804572e728a43"
+    }
+  }
+}

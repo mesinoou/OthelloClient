@@ -5,6 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 public final class OpeningBookTest {
 
@@ -17,6 +19,8 @@ public final class OpeningBookTest {
         testGeneratedBook();
         testBookSequenceAndFallback();
         testWthorImporter();
+        testWthorZipImporter();
+        testIncompleteWthorGameIsRejectedByBuilder();
         testCorruptBookIsRejected();
         System.out.println("OpeningBookTest: PASS");
     }
@@ -184,13 +188,7 @@ public final class OpeningBookTest {
     }
 
     private static void testWthorImporter() throws IOException {
-        byte[] bytes = new byte[16 + 68];
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
-        buffer.putInt(4, 1);
-        bytes[12] = 8;
-        bytes[13] = 0;
-        bytes[16 + 6] = 32;
-        bytes[16 + 8] = 56;
+        byte[] bytes = oneGameWthorBytes();
 
         Path path = Files.createTempFile("wthor-test", ".wtb");
         try {
@@ -206,6 +204,57 @@ public final class OpeningBookTest {
             );
         } finally {
             Files.deleteIfExists(path);
+        }
+    }
+
+    private static void testWthorZipImporter() throws IOException {
+        Path path = Files.createTempFile("wthor-test", ".zip");
+        try {
+            try (ZipOutputStream output = new ZipOutputStream(
+                Files.newOutputStream(path)
+            )) {
+                output.putNextEntry(new ZipEntry("WTH_TEST.wtb"));
+                output.write(oneGameWthorBytes());
+                output.closeEntry();
+                output.putNextEntry(new ZipEntry("WTHOR.TRN"));
+                output.write(new byte[] {1, 2, 3});
+                output.closeEntry();
+            }
+            List<WthorGame> games = WthorImporter.read(path);
+            assertEquals(1, games.size(), "zipped WTHOR game count");
+            assertEquals(32, games.get(0).blackScore(), "zipped WTHOR score");
+            assertEquals(1, games.get(0).moveCount(), "zipped WTHOR moves");
+        } finally {
+            Files.deleteIfExists(path);
+        }
+    }
+
+    private static byte[] oneGameWthorBytes() {
+        byte[] bytes = new byte[16 + 68];
+        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(4, 1);
+        bytes[12] = 8;
+        bytes[13] = 0;
+        bytes[16 + 6] = 32;
+        bytes[16 + 8] = 56;
+        return bytes;
+    }
+
+    private static void testIncompleteWthorGameIsRejectedByBuilder()
+        throws IOException {
+        Path archive = Files.createTempFile("wthor-incomplete", ".wtb");
+        Path output = Files.createTempFile("opening-book-incomplete", ".bin");
+        try {
+            Files.write(archive, oneGameWthorBytes());
+            OpeningBookBuilder builder = new OpeningBookBuilder(8, 1, 2);
+            builder.addArchive(archive);
+            builder.write(output);
+            OpeningBook book = OpeningBook.load(output);
+            assertEquals(0, book.sourceGames(), "accepted incomplete games");
+            assertEquals(0, book.size(), "entries from incomplete games");
+        } finally {
+            Files.deleteIfExists(archive);
+            Files.deleteIfExists(output);
         }
     }
 

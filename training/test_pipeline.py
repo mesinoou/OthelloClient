@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import struct
 import io
 from pathlib import Path
@@ -12,11 +13,13 @@ import numpy as np
 from training.othello import (
     BLACK,
     CORNERS,
+    Position,
     WHITE,
     apply_move,
     frontier_counts,
     initial_position,
     legal_moves,
+    neighbors,
     parity_access_difference,
     source_coordinate_to_square,
     stable_edge_discs,
@@ -30,16 +33,205 @@ from training.export_java_model import (
     export_java_model,
     reverse_ternary_indices,
 )
+from training.java_model import (
+    JavaEvaluationModel,
+    adjust_java_model_bias,
+    evaluate_java_model_components,
+    evaluate_java_model_features,
+    interpolate_java_models,
+    merge_java_models,
+    read_java_model,
+    scale_java_model,
+    write_java_model,
+)
 from training.train_model import (
+    PAIR_BRANCHES,
+    SCALAR_BRANCHES,
     PatternModel,
     ProgressBar,
+    TorchPatternModel,
+    evaluate_quantized,
     labels,
+    objective_values_and_gradient,
+    pattern_table_key,
     swap_pattern_colors,
+    torch,
+    wld_targets,
+)
+from training.train_search_correction import (
+    apply_phase_starts,
+    concatenate_datasets,
+    parse_phase_starts,
+    sample_weights,
+    source_correction_metrics,
+    teacher_scores_normalized,
+    zero_output_layers,
 )
 from training.wthor import read_wtb
+from training.build_corpus import (
+    canonical_position_key,
+    load_wthor_registry,
+    transform_bitboard,
+)
+from training.materialize_dataset import aggregate_observations
+from training.evaluate_ranking import average_ranks, pairwise_accuracy
+from training.analyze_match_pairs import read_opening_pairs
+from training.analyze_opening_ranking import (
+    MoveCandidate,
+    java_divide,
+    select_candidate,
+)
+from training.generate_edax_teacher import (
+    parse_result_line,
+    server_position_to_obf,
+)
+from training.sample_ranking_positions import phase_ids
+from training.train_potential_mobility_correction import fit_phase_table
+from training.fit_mpc import load_many, validate_split_paths
+from training.audit_evaluator_architecture import (
+    AntisymmetricHead,
+    balance_source_weights,
+)
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
+    def test_torch_model_symbol_is_available_without_pytorch(self) -> None:
+        if torch is None:
+            with self.assertRaisesRegex(ValueError, "PyTorch"):
+                TorchPatternModel(PatternModel(np.random.default_rng(7)))
+        else:
+            self.assertTrue(issubclass(TorchPatternModel, torch.nn.Module))
+
+    def test_opening_ranking_teacher_weight(self) -> None:
+        statistical = MoveCandidate(
+            square=10,
+            games=100,
+            statistical_quality=700,
+            teacher_score=-800,
+        )
+        evaluated = MoveCandidate(
+            square=20,
+            games=80,
+            statistical_quality=650,
+            teacher_score=1600,
+        )
+        candidates = [statistical, evaluated]
+
+        self.assertEqual(
+            select_candidate(candidates, None, 6400).square,
+            statistical.square,
+        )
+        self.assertEqual(
+            select_candidate(candidates, 8, 6400).square,
+            evaluated.square,
+        )
+        self.assertEqual(java_divide(-7, 3), -2)
+
+    def test_ranking_phase_boundaries_match_model_phases(self) -> None:
+        ply = np.asarray([8, 19, 20, 29, 30, 39, 40, 52], dtype=np.uint8)
+        np.testing.assert_array_equal(
+            phase_ids(ply),
+            np.asarray([0, 0, 0, 0, 1, 1, 2, 3]),
+        )
+
+    def test_search_correction_supports_analysis_phase_boundaries(self) -> None:
+        starts = parse_phase_starts(
+            "14,25,30,35,40,45,50,56",
+            (20, 30, 40, 50),
+        )
+        data = {
+            "ply": np.asarray(
+                (14, 24, 25, 29, 30, 55, 56, 59),
+                dtype=np.uint8,
+            ),
+            "phase": np.zeros(8, dtype=np.int8),
+        }
+        apply_phase_starts(data, starts)
+        np.testing.assert_array_equal(
+            data["phase"],
+            np.asarray((0, 0, 1, 1, 2, 6, 7, 7), dtype=np.int8),
+        )
+
+    def test_ranking_metrics_handle_ties(self) -> None:
+        values = np.asarray([30, 10, 30, 20])
+        np.testing.assert_allclose(average_ranks(values), (2.5, 0.0, 2.5, 1.0))
+        target = np.asarray([3, 2, 1])
+        self.assertAlmostEqual(
+            5.0 / 6.0,
+            pairwise_accuracy(np.asarray([2, 2, 1]), target),
+        )
+
+    def test_match_pair_reader_clusters_both_colors(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "match.txt"
+            path.write_text(
+                "game=1/2 opening=1 learned=black result=WIN "
+                "margin=+8 discs=36-28 moves=60 elapsed=1.0s\n"
+                "game=2/2 opening=1 learned=white result=DRAW "
+                "margin=+0 discs=32-32 moves=60 elapsed=1.0s\n",
+                encoding="utf-8",
+            )
+            scores, margins = read_opening_pairs(path)
+            np.testing.assert_allclose(scores, (0.75,))
+            np.testing.assert_allclose(margins, (4.0,))
+
+    def test_edax_obf_mirrors_server_initial_position(self) -> None:
+        black, white = initial_position()
+        self.assertEqual(
+            "---------------------------OX------XO--------------------------- X",
+            server_position_to_obf(black, white),
+        )
+
+    def test_edax_obf_mirrors_asymmetric_server_position(self) -> None:
+        obf = server_position_to_obf(1 << 0, 1 << 9)
+        self.assertEqual("X", obf[7])
+        self.assertEqual("O", obf[14])
+        self.assertEqual(" X", obf[64:])
+
+    def test_edax_solver_result_parser(self) -> None:
+        result = parse_result_line(
+            " 12|   11   -04        0:00.125        123456"
+            "  d3 E3 f4"
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(12, result.index)
+        self.assertEqual(11, result.depth)
+        self.assertEqual(-4, result.score)
+        self.assertEqual("exact", result.score_bound)
+        self.assertEqual(125, result.time_ms)
+        self.assertEqual(123456, result.nodes)
+        self.assertEqual("d3 E3 f4", result.pv)
+
+    def test_edax_solver_result_parser_resolves_extreme_score(self) -> None:
+        negative = parse_result_line(
+            "1315|11@73% <-63 0:00.000 23290 f1 H1"
+        )
+        positive = parse_result_line(
+            "1316|11@73% >+63 0:00.000 23290 f1 H1"
+        )
+
+        self.assertIsNotNone(negative)
+        self.assertIsNotNone(positive)
+        assert negative is not None
+        assert positive is not None
+        self.assertEqual(-64, negative.score)
+        self.assertEqual(64, positive.score)
+        self.assertEqual("upper", negative.score_bound)
+        self.assertEqual("lower", positive.score_bound)
+
+        bounded = parse_result_line(
+            "1401|11@73% <-60 0:00.015 138927 b1 C1"
+        )
+        self.assertIsNotNone(bounded)
+        assert bounded is not None
+        self.assertEqual(-61, bounded.score)
+        self.assertEqual("upper", bounded.score_bound)
+
+    def test_edax_solver_result_parser_rejects_ambiguous_bound(self) -> None:
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            parse_result_line("1|11@73% >-10 0:00.000 100 f1")
+
     def test_initial_moves_match_mirrored_source_coordinates(self) -> None:
         black, white = initial_position()
         moves = legal_moves(black, white)
@@ -52,6 +244,41 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
             square for square in range(64) if moves & (1 << square)
         }
         self.assertEqual(mirrored, actual)
+
+    def test_potential_mobility_is_color_antisymmetric(self) -> None:
+        black, white = initial_position()
+        empty = ~(black | white) & ((1 << 64) - 1)
+        black_potential = (neighbors(white) & empty).bit_count()
+        white_potential = (neighbors(black) & empty).bit_count()
+        self.assertEqual((10, 10), (black_potential, white_potential))
+
+        own = 1 << 0
+        opponent = 1 << 9
+        empty = ~(own | opponent) & ((1 << 64) - 1)
+        self.assertEqual(
+            (7, 2),
+            (
+                (neighbors(opponent) & empty).bit_count(),
+                (neighbors(own) & empty).bit_count(),
+            ),
+        )
+
+    def test_potential_mobility_table_is_color_antisymmetric(self) -> None:
+        data = {
+            "phase": np.asarray((0, 0), dtype=np.int8),
+            "static_score": np.asarray((0, 0), dtype=np.int32),
+            "edax_score": np.asarray((1, -1), dtype=np.int16),
+            "occurrences": np.asarray((1, 1), dtype=np.uint32),
+            "potential_mobility_own": np.asarray((1, 2), dtype=np.uint8),
+            "potential_mobility_opponent": np.asarray(
+                (2, 1),
+                dtype=np.uint8,
+            ),
+        }
+        table = fit_phase_table(data, 0, 6400, 0.0)
+        self.assertEqual(100.0, table[1, 2])
+        self.assertEqual(-100.0, table[2, 1])
+        self.assertEqual(0.0, table[1, 1])
 
     def test_first_record_prefix_is_legal(self) -> None:
         black, white = initial_position()
@@ -74,15 +301,60 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         data = bytearray(16 + 68)
         struct.pack_into("<i", data, 4, 1)
         data[12] = 8
+        data[14] = 24
         data[16 + 6] = 40
+        data[16 + 7] = 35
         data[16 + 8] = 56
 
         games = read_wtb(bytes(data), "test.zip", "WTH_2099.WTB")
 
         self.assertEqual(1, len(games))
         self.assertEqual(40, games[0].black_score)
+        self.assertEqual(35, games[0].theoretical_black_score)
+        self.assertEqual(24, games[0].theoretical_empties)
         self.assertEqual((wthor_move_code_to_square(56),), games[0].moves)
         self.assertEqual("wthor:test.zip:WTH_2099.WTB:0", games[0].split_key)
+
+    def test_full_wthor_registry_has_official_total(self) -> None:
+        registry = load_wthor_registry()
+        self.assertEqual(137548, registry["expected_total_games"])
+        self.assertEqual(37, len(registry["archives"]))
+
+    def test_opening_key_is_invariant_under_board_symmetry(self) -> None:
+        black, white = initial_position()
+        original = Position(black | 1, white, BLACK, 1)
+        transformed = Position(
+            transform_bitboard(original.black, 1),
+            transform_bitboard(original.white, 1),
+            BLACK,
+            1,
+        )
+        self.assertEqual(
+            canonical_position_key(original),
+            canonical_position_key(transformed),
+        )
+
+    def test_corpus_aggregation_preserves_soft_and_theoretical_labels(self) -> None:
+        black, white = initial_position()
+        data = {
+            "black": np.asarray([black, black], dtype=np.uint64),
+            "white": np.asarray([white, white], dtype=np.uint64),
+            "player": np.asarray([BLACK, BLACK], dtype=np.int8),
+            "ply": np.asarray([0, 0], dtype=np.uint8),
+            "game_id": np.asarray([0, 1], dtype=np.uint32),
+            "source": np.asarray([0, 1], dtype=np.uint8),
+            "label_disc": np.asarray([12, -4], dtype=np.int8),
+            "label_filled": np.asarray([16, -8], dtype=np.int8),
+            "theoretical_disc": np.asarray([127, 6], dtype=np.int8),
+        }
+        aggregated = aggregate_observations(data)
+        self.assertEqual(1, len(aggregated["player"]))
+        self.assertEqual(2, int(aggregated["sample_count"][0]))
+        self.assertEqual(3, int(aggregated["source_mask"][0]))
+        self.assertEqual(1, int(aggregated["black_wins"][0]))
+        self.assertEqual(1, int(aggregated["white_wins"][0]))
+        self.assertAlmostEqual(4.0, float(aggregated["label_disc"][0]))
+        self.assertAlmostEqual(6.0, float(aggregated["teacher_disc"][0]))
 
     def test_patterns_stay_inside_declared_ranges(self) -> None:
         black, white = initial_position()
@@ -225,10 +497,53 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         data = {
             "label_filled": np.asarray([16, 16], dtype=np.int8),
             "label_disc": np.asarray([8, 8], dtype=np.int8),
+            "teacher_filled": np.asarray([32.0, 32.0], dtype=np.float32),
             "player": np.asarray([BLACK, WHITE], dtype=np.int8),
         }
         actual = labels(data, np.asarray([0, 1]), "filled")[:, 0]
         np.testing.assert_allclose(actual, (0.25, -0.25))
+        teacher = labels(data, np.asarray([0, 1]), "teacher-filled")[:, 0]
+        np.testing.assert_allclose(teacher, (0.5, -0.5))
+
+    def test_wld_targets_use_soft_side_to_move_score(self) -> None:
+        data = {
+            "player": np.asarray([BLACK, WHITE], dtype=np.int8),
+            "sample_count": np.asarray([4, 4], dtype=np.uint32),
+            "black_wins": np.asarray([3, 3], dtype=np.uint64),
+            "draws": np.asarray([1, 1], dtype=np.uint64),
+            "white_wins": np.asarray([0, 0], dtype=np.uint64),
+        }
+        actual = wld_targets(data, np.asarray([0, 1]))[:, 0]
+        np.testing.assert_allclose(actual, (0.875, 0.125))
+
+    def test_objectives_preserve_color_antisymmetry(self) -> None:
+        prediction = np.asarray([[0.7], [-0.7]], dtype=np.float32)
+        margin = np.asarray([[0.4], [-0.4]], dtype=np.float32)
+        wld = np.asarray([[0.8], [0.2]], dtype=np.float32)
+        for loss_name in ("mse", "huber", "wld", "hybrid"):
+            values, gradient = objective_values_and_gradient(
+                prediction,
+                margin,
+                wld,
+                loss_name,
+                1.0,
+                0.25,
+                4.0,
+            )
+            self.assertTrue(np.isfinite(values).all(), loss_name)
+            self.assertTrue(np.isfinite(gradient).all(), loss_name)
+            self.assertAlmostEqual(
+                float(values[0, 0]),
+                float(values[1, 0]),
+                places=6,
+                msg=loss_name,
+            )
+            self.assertAlmostEqual(
+                float(gradient[0, 0]),
+                -float(gradient[1, 0]),
+                places=6,
+                msg=loss_name,
+            )
 
     def test_progress_bar_reports_completion(self) -> None:
         output = io.StringIO()
@@ -274,6 +589,298 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
                 struct.unpack_from(">h", binary, first_table_offset + 2)[0],
             )
             self.assertEqual(1, result["score_divisor"])
+
+            loaded = read_java_model(output_path)
+            features: dict[str, np.ndarray] = {
+                "ply": np.asarray((10,), dtype=np.uint8),
+                "mobility_own": np.zeros(1, dtype=np.int8),
+                "mobility_opponent": np.zeros(1, dtype=np.int8),
+                "frontier_own": np.zeros(1, dtype=np.int8),
+                "frontier_opponent": np.zeros(1, dtype=np.int8),
+                "disc_difference": np.zeros(1, dtype=np.int8),
+                "corner_difference": np.zeros(1, dtype=np.int8),
+                "corner_move_difference": np.zeros(1, dtype=np.int8),
+                "stable_edge_difference": np.zeros(1, dtype=np.int8),
+                "parity_access_difference": np.zeros(1, dtype=np.int8),
+            }
+            for name, group in PATTERN_GROUPS.items():
+                features[name] = np.zeros(
+                    (1, group.instances),
+                    dtype=np.int32,
+                )
+            features["diagonal"][0, 0] = 1
+            np.testing.assert_array_equal(
+                evaluate_java_model_features(loaded, features),
+                np.asarray((12,), dtype=np.int32),
+            )
+            components = evaluate_java_model_components(loaded, features)
+            self.assertEqual((1, 16), components.shape)
+            self.assertEqual(
+                12,
+                int(components.sum()) + loaded.phase_bias[0],
+            )
+
+            roundtrip_path = directory / "roundtrip.bin"
+            write_java_model(loaded, roundtrip_path)
+            self.assertEqual(binary, roundtrip_path.read_bytes())
+
+            zero = JavaEvaluationModel(
+                phase_starts=loaded.phase_starts,
+                score_scale=loaded.score_scale,
+                score_divisor=1,
+                phase_bias=(0, 0, 0, 0),
+                tables=tuple(
+                    tuple(np.zeros_like(table) for table in phase)
+                    for phase in loaded.tables
+                ),
+            )
+            correction_path = directory / "zero.bin"
+            combined_path = directory / "combined.bin"
+            write_java_model(zero, correction_path)
+            merge_java_models(output_path, correction_path, combined_path)
+            self.assertEqual(binary, combined_path.read_bytes())
+
+            half_path = directory / "half.bin"
+            scale_java_model(output_path, half_path, 0.5)
+            half = read_java_model(half_path)
+            np.testing.assert_array_equal(
+                half.tables[0][0],
+                np.rint(loaded.tables[0][0].astype(np.float64) * 0.5),
+            )
+            phase_path = directory / "phase.bin"
+            scale_java_model(
+                output_path,
+                phase_path,
+                1.0,
+                (1.0, 0.0, 0.0, 0.0),
+            )
+            phase_model = read_java_model(phase_path)
+            self.assertTrue(phase_model.tables[0][0].any())
+            self.assertFalse(phase_model.tables[1][0].any())
+
+            bias_path = directory / "bias.bin"
+            adjust_java_model_bias(
+                output_path,
+                bias_path,
+                (100, 200, 300, 400),
+            )
+            biased = read_java_model(bias_path)
+            self.assertEqual((100, 200, 300, 400), biased.phase_bias)
+            for original, adjusted in zip(
+                loaded.tables,
+                biased.tables,
+                strict=True,
+            ):
+                for original_table, adjusted_table in zip(
+                    original,
+                    adjusted,
+                    strict=True,
+                ):
+                    np.testing.assert_array_equal(
+                        original_table,
+                        adjusted_table,
+                    )
+
+            blend_zero_path = directory / "blend-zero.bin"
+            interpolate_java_models(
+                output_path,
+                bias_path,
+                blend_zero_path,
+                0.0,
+            )
+            self.assertEqual(binary, blend_zero_path.read_bytes())
+            blend_one_path = directory / "blend-one.bin"
+            interpolate_java_models(
+                output_path,
+                bias_path,
+                blend_one_path,
+                1.0,
+            )
+            self.assertEqual(
+                bias_path.read_bytes(),
+                blend_one_path.read_bytes(),
+            )
+            blend_phase_path = directory / "blend-phase.bin"
+            interpolate_java_models(
+                output_path,
+                bias_path,
+                blend_phase_path,
+                1.0,
+                (1.0, 0.0, 0.0, 0.0),
+            )
+            blended_phase = read_java_model(blend_phase_path)
+            self.assertEqual(100, blended_phase.phase_bias[0])
+            self.assertEqual(0, blended_phase.phase_bias[1])
+
+    def test_search_correction_maps_terminal_scores_to_margin_scale(self) -> None:
+        scores = np.asarray(
+            (100_012, -100_008, 640, -320, 0),
+            dtype=np.int32,
+        )
+        np.testing.assert_allclose(
+            teacher_scores_normalized(scores, 6400),
+            np.asarray((12 / 64, -8 / 64, 0.1, -0.05, 0.0)),
+        )
+
+    def test_search_correction_starts_with_zero_output_layers(self) -> None:
+        model = PatternModel(np.random.default_rng(7))
+        zero_output_layers(model)
+        for branch in (*PATTERN_GROUPS, *PAIR_BRANCHES, *SCALAR_BRANCHES):
+            layers = [
+                int(name.rsplit("_w", 1)[1])
+                for name in model.parameters
+                if name.startswith(branch + "_w")
+            ]
+            last = max(layers)
+            self.assertFalse(model.parameters[f"{branch}_w{last}"].any())
+            self.assertFalse(model.parameters[f"{branch}_b{last}"].any())
+
+    def test_search_correction_balances_dataset_sources(self) -> None:
+        data = {
+            "occurrences": np.asarray((1, 4, 9, 16), dtype=np.uint32),
+            "_source": np.asarray((0, 0, 0, 1), dtype=np.int8),
+        }
+        indices = np.arange(4)
+        weights = sample_weights(data, indices, 8.0, True)
+        self.assertAlmostEqual(float(weights[:3].sum()), float(weights[3]))
+
+        target = np.asarray((0.2, -0.1, 0.3, -0.2), dtype=np.float32)
+        metrics = source_correction_metrics(
+            np.zeros(4, dtype=np.float32),
+            target,
+            weights,
+            data["_source"],
+            0.1,
+        )
+        self.assertEqual(2, len(metrics))
+        for source in metrics:
+            self.assertAlmostEqual(1.0, float(source["huber_ratio"]))
+
+    def test_architecture_audit_balances_sources_per_phase(self) -> None:
+        weights = balance_source_weights(
+            np.asarray((1.0, 2.0, 4.0, 8.0), dtype=np.float32),
+            np.asarray((0, 0, 0, 1), dtype=np.int8),
+        )
+        self.assertAlmostEqual(float(weights[:3].sum()), float(weights[3]))
+
+    @unittest.skipIf(torch is None, "PyTorch is not installed")
+    def test_interaction_head_is_color_antisymmetric(self) -> None:
+        torch.manual_seed(17)
+        head = AntisymmetricHead(3, 2, 4)
+        with torch.no_grad():
+            for parameter in head.parameters():
+                parameter.copy_(torch.randn_like(parameter))
+            signed = torch.randn(5, 3)
+            context = torch.randn(5, 2)
+            positive = head(signed, context)
+            negative = head(-signed, context)
+        np.testing.assert_allclose(
+            positive.numpy(),
+            -negative.numpy(),
+            atol=1.0e-6,
+        )
+
+    def test_mpc_calibration_rejects_duplicate_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            first = directory / "first.csv"
+            first.write_text(
+                "seed,phase,sample,depth,shallowScore,deepScore\n"
+                "1,0,0,8,10,20\n",
+                encoding="utf-8",
+            )
+            second = directory / "second.csv"
+            second.write_text(
+                "seed,phase,sample,depth,shallowScore,deepScore\n"
+                "2,0,0,8,30,40\n",
+                encoding="utf-8",
+            )
+            combined = load_many([first, second], 2)
+            self.assertEqual([(10.0, 20.0), (30.0, 40.0)], combined[(0, 8)])
+            with self.assertRaisesRegex(ValueError, "must be unique"):
+                load_many([first, first], 2)
+            with self.assertRaisesRegex(ValueError, "shared by"):
+                validate_split_paths(
+                    {
+                        "train": [first],
+                        "validation": [first],
+                    }
+                )
+
+    def test_search_correction_combines_only_common_arrays(self) -> None:
+        combined = concatenate_datasets(
+            [
+                {
+                    "required": np.asarray((1, 2)),
+                    "optional": np.asarray((3, 4)),
+                },
+                {"required": np.asarray((5,))},
+            ]
+        )
+        self.assertEqual({"required"}, set(combined))
+        np.testing.assert_array_equal(
+            combined["required"],
+            np.asarray((1, 2, 5)),
+        )
+
+    def test_quantized_evaluation_applies_java_score_divisor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tables_path = Path(temporary) / "evaluation-tables.npz"
+            payload: dict[str, np.ndarray] = {
+                "score_scale": np.asarray((100,), dtype=np.int32),
+                "phase_bias": np.asarray((100, 0, 0, 0), dtype=np.int32),
+            }
+            data: dict[str, np.ndarray] = {
+                "label_filled": np.asarray((16,), dtype=np.int8),
+                "label_disc": np.asarray((16,), dtype=np.int8),
+                "player": np.asarray((BLACK,), dtype=np.int8),
+                "sample_count": np.asarray((1,), dtype=np.uint32),
+                "black_wins": np.asarray((1,), dtype=np.uint64),
+                "draws": np.asarray((0,), dtype=np.uint64),
+                "white_wins": np.asarray((0,), dtype=np.uint64),
+            }
+            for name, group in PATTERN_GROUPS.items():
+                data[name] = np.zeros(
+                    (1, group.instances),
+                    dtype=np.int32,
+                )
+                for class_id in range(group.class_count or 1):
+                    payload[pattern_table_key(0, name, class_id)] = np.zeros(
+                        3 ** group.size_for_class(class_id),
+                        dtype=np.int16,
+                    )
+            for name, specs in PAIR_BRANCHES.items():
+                for field, _, _ in specs:
+                    data[field] = np.zeros(1, dtype=np.int8)
+                payload[f"phase0_{name}"] = np.zeros(
+                    (65, 65),
+                    dtype=np.int16,
+                )
+            for name, (minimum, maximum, _) in SCALAR_BRANCHES.items():
+                data[name] = np.zeros(1, dtype=np.int8)
+                payload[f"phase0_{name}"] = np.zeros(
+                    maximum - minimum + 1,
+                    dtype=np.int16,
+                )
+            np.savez_compressed(tables_path, **payload)
+            args = argparse.Namespace(
+                label="filled",
+                loss="mse",
+                margin_loss_weight=1.0,
+                huber_delta=0.25,
+                wld_logit_scale=4.0,
+            )
+
+            metrics = evaluate_quantized(
+                tables_path,
+                data,
+                np.asarray((0,)),
+                0,
+                args,
+                score_divisor=2,
+            )
+
+            self.assertAlmostEqual(0.0625, metrics.mse)
 
 
 if __name__ == "__main__":
