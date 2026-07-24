@@ -70,6 +70,24 @@ java -cp .build OthelloClient 127.0.0.1 25033 Player auto 8000 `
   --ponder on --ponder-ratio 0.8
 ```
 
+2026-07-24に確定した大会構成は、黒番にEVAL-018 held、白番に
+EVAL-020 25%補正を使用する。モデルを`data/tournament-models.sha256`と
+照合してから、次のように起動する。
+
+```powershell
+Get-FileHash data/evaluation-tables-tournament.bin -Algorithm SHA256
+Get-FileHash data/evaluation-tables-tournament-white.bin -Algorithm SHA256
+
+java -cp .build OthelloClient 127.0.0.1 25033 Player auto 8000 `
+  data/evaluation-tables-tournament.bin `
+  --white-model data/evaluation-tables-tournament-white.bin `
+  --tt auto --ponder off
+```
+
+Linuxでは`sha256sum -c data/tournament-models.sha256`で照合し、同じ引数で
+起動する。モデル本体はGit追跡外なので、リポジトリ取得後に2ファイルを
+`data/`へ配置する必要がある。
+
 黒番と白番で別の検証済み評価モデルを使う場合は、位置引数のモデルを
 共通既定値として、`--black-model`または`--white-model`で上書きする。
 

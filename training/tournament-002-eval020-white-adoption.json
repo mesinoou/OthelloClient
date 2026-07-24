@@ -1,0 +1,60 @@
+{
+  "experiment": "TOURNEY-002",
+  "status": "accepted",
+  "date": "2026-07-24",
+  "models": {
+    "black": {
+      "name": "EVAL-018 held",
+      "path": "data/evaluation-tables-tournament.bin",
+      "sha256": "d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042"
+    },
+    "white": {
+      "name": "EVAL-020 broad L11 white ranking, 25 percent correction",
+      "path": "data/evaluation-tables-tournament-white.bin",
+      "sha256": "68ad6f139ae7f7a5c0aa023e2198c8afc8df7fb2c1bf2ea63dfbb13bef04f15c"
+    },
+    "opening_book": {
+      "path": "data/opening-book.bin",
+      "sha256": "02aedfc4b435bd66ee1f9509626ec60a3b811041c8823b7972044f72fcf9f42b"
+    }
+  },
+  "evidence": {
+    "fixed_depth_8_white": {
+      "openings": 20,
+      "base_score_rate": 0.4,
+      "candidate_score_rate": 0.5
+    },
+    "edax_l11_white": {
+      "openings": 8,
+      "time_millis": 500,
+      "base_score_rate": 0.25,
+      "candidate_score_rate": 0.25,
+      "base_mean_margin": -15.25,
+      "candidate_mean_margin": -14.0
+    }
+  },
+  "decision": {
+    "scope": "white only",
+    "reason": "fixed-depth white score and short L11 mean margin improved without a detected WLD regression",
+    "known_risk": "the L11 sample contains only eight games and does not establish a statistically significant win-rate gain",
+    "time_millis": 8000,
+    "threads": "auto",
+    "tt": "auto",
+    "ponder": false
+  },
+  "verification": {
+    "java_test_classes_passed": 12,
+    "model_symmetry_tests_passed": 2,
+    "color_specific_model_match_games_completed": 4,
+    "server_smoke": {
+      "completed_games": 1,
+      "legal_put_messages": 60,
+      "result": "TourneyFinalA 37-27 TourneyFinalB",
+      "black_model_selected": true,
+      "white_model_selected": true,
+      "timeout_losses": 0,
+      "stderr_bytes": 0,
+      "post_game_note": "OthelloServer 1.17 replied ERROR 4 after receiving CLOSE following END; the game had already completed"
+    }
+  }
+}
