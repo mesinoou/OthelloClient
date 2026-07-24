@@ -946,6 +946,12 @@ if torch is not None:
                 )
             return prediction
 
+else:
+
+    class TorchPatternModel:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            raise ValueError("PyTorch backend is not available")
+
 
 def torch_pattern_inputs(group: PatternGroup, indices: Any) -> Any:
     flattened = indices.reshape(-1).long()

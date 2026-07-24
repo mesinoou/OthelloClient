@@ -49,6 +49,7 @@ from training.train_model import (
     SCALAR_BRANCHES,
     PatternModel,
     ProgressBar,
+    TorchPatternModel,
     evaluate_quantized,
     labels,
     objective_values_and_gradient,
@@ -94,6 +95,13 @@ from training.audit_evaluator_architecture import (
 
 
 class OthelloTrainingPipelineTest(unittest.TestCase):
+    def test_torch_model_symbol_is_available_without_pytorch(self) -> None:
+        if torch is None:
+            with self.assertRaisesRegex(ValueError, "PyTorch"):
+                TorchPatternModel(PatternModel(np.random.default_rng(7)))
+        else:
+            self.assertTrue(issubclass(TorchPatternModel, torch.nn.Module))
+
     def test_opening_ranking_teacher_weight(self) -> None:
         statistical = MoveCandidate(
             square=10,
