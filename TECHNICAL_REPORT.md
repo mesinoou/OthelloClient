@@ -111,7 +111,7 @@ flowchart LR
 
 ### 4.2 学習時モデル
 
-基本モデルでは各特徴branchに`input -> 16 -> 16 -> 1`の小型MLPを用いる。色交換した入力も同時に評価し、
+基本モデルは特徴ごとの出力を加算するmulti-branch構造である。局所パターンbranchは`input -> 16 -> 16 -> 1`、mobilityとfrontierのpair branchは`2 -> 8 -> 1`、残る5個のscalar branchは`1 -> 4 -> 1`の小型MLPを用いる。隠れ層の活性化関数はLeakyReLU、負領域の傾きは0.01である。色交換した入力も同時に評価し、
 
 ```text
 score(x) = 0.5 * (f(x) - f(swapColors(x)))
