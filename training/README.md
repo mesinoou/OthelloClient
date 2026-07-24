@@ -338,6 +338,12 @@ python -u -m training.train_search_correction `
 
 `generate_edax_teacher`は入力を変更せず、`edax_level`、`edax_depth`、`edax_score`、`edax_time_ms`、`edax_nodes`、`edax_pv`を追加する。`.obf`と実行条件・全SHA-256を含む同名の`.json`も同じ場所へ保存する。EVAL-006では候補自身が訪れた葉を再採点する反復で初回モデルの劣化を解消したが、Edax L8に対する改善は統計的に確認できず、モデルは不採用とした。
 
+Edaxの選択的探索が`<-60`や`>+60`のような境界scoreを返した場合は、
+確定している側の最近傍値と`edax_score_bound=upper/lower`を保存する。
+WLD順位学習では符号が確定した勝敗クラスだけを使用し、境界scoreを
+同一勝敗クラス内の石差pairへ使用しない。通常の整数scoreには
+`edax_score_bound=exact`が付く。
+
 phase別biasだけを切り分ける場合は、元モデルの表を変えずに候補を生成できる。
 
 ```powershell

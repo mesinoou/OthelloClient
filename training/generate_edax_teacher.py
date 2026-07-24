@@ -16,6 +16,7 @@ import time
 RESULT_PATTERN = re.compile(r"^\s*(\d+)\|(.*)$")
 DEPTH_PATTERN = re.compile(r"^(\d+)")
 SCORE_PATTERN = re.compile(r"^([+-])(\d+)$")
+BOUNDED_SCORE_PATTERN = re.compile(r"^([<>])([+-])(\d+)$")
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class EdaxResult:
     index: int
     depth: int
     score: int
+    score_bound: str
     time_ms: int
     nodes: int
     pv: str
@@ -67,15 +69,34 @@ def parse_result_line(line: str) -> EdaxResult | None:
         raise ValueError(f"invalid Edax result row: {line}")
     depth_match = DEPTH_PATTERN.match(fields[0])
     score_match = SCORE_PATTERN.match(fields[1])
-    if depth_match is None or score_match is None:
+    if depth_match is None:
         raise ValueError(f"invalid Edax depth or score: {line}")
     depth = int(depth_match.group(1))
-    magnitude = int(score_match.group(2))
-    score = magnitude if score_match.group(1) == "+" else -magnitude
+    if score_match is not None:
+        magnitude = int(score_match.group(2))
+        score = magnitude if score_match.group(1) == "+" else -magnitude
+        score_bound = "exact"
+    else:
+        bounded_match = BOUNDED_SCORE_PATTERN.match(fields[1])
+        if bounded_match is None:
+            raise ValueError(f"invalid Edax depth or score: {line}")
+        operator, sign, magnitude_text = bounded_match.groups()
+        magnitude = int(magnitude_text)
+        if operator == "<" and sign == "-":
+            score = -(magnitude + 1)
+            score_bound = "upper"
+        elif operator == ">" and sign == "+":
+            score = magnitude + 1
+            score_bound = "lower"
+        else:
+            raise ValueError(f"ambiguous Edax score bound: {line}")
+        if abs(score) > 64:
+            raise ValueError(f"Edax score bound exceeds disc range: {line}")
     return EdaxResult(
         index=index,
         depth=depth,
         score=score,
+        score_bound=score_bound,
         time_ms=elapsed_to_millis(fields[2]),
         nodes=int(fields[3]),
         pv=" ".join(fields[4:]),
@@ -180,6 +201,7 @@ def write_results(
         "edax_level",
         "edax_depth",
         "edax_score",
+        "edax_score_bound",
         "edax_time_ms",
         "edax_nodes",
         "edax_pv",
@@ -199,6 +221,7 @@ def write_results(
                     "edax_level": level,
                     "edax_depth": result.depth,
                     "edax_score": result.score,
+                    "edax_score_bound": result.score_bound,
                     "edax_time_ms": result.time_ms,
                     "edax_nodes": result.nodes,
                     "edax_pv": result.pv,

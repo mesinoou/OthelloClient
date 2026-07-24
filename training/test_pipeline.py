@@ -190,9 +190,39 @@ class OthelloTrainingPipelineTest(unittest.TestCase):
         self.assertEqual(12, result.index)
         self.assertEqual(11, result.depth)
         self.assertEqual(-4, result.score)
+        self.assertEqual("exact", result.score_bound)
         self.assertEqual(125, result.time_ms)
         self.assertEqual(123456, result.nodes)
         self.assertEqual("d3 E3 f4", result.pv)
+
+    def test_edax_solver_result_parser_resolves_extreme_score(self) -> None:
+        negative = parse_result_line(
+            "1315|11@73% <-63 0:00.000 23290 f1 H1"
+        )
+        positive = parse_result_line(
+            "1316|11@73% >+63 0:00.000 23290 f1 H1"
+        )
+
+        self.assertIsNotNone(negative)
+        self.assertIsNotNone(positive)
+        assert negative is not None
+        assert positive is not None
+        self.assertEqual(-64, negative.score)
+        self.assertEqual(64, positive.score)
+        self.assertEqual("upper", negative.score_bound)
+        self.assertEqual("lower", positive.score_bound)
+
+        bounded = parse_result_line(
+            "1401|11@73% <-60 0:00.015 138927 b1 C1"
+        )
+        self.assertIsNotNone(bounded)
+        assert bounded is not None
+        self.assertEqual(-61, bounded.score)
+        self.assertEqual("upper", bounded.score_bound)
+
+    def test_edax_solver_result_parser_rejects_ambiguous_bound(self) -> None:
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            parse_result_line("1|11@73% >-10 0:00.000 100 f1")
 
     def test_initial_moves_match_mirrored_source_coordinates(self) -> None:
         black, white = initial_position()

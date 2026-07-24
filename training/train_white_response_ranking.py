@@ -169,6 +169,9 @@ def materialize_siblings(
                     "selected": row["selected"].lower() == "true",
                     "teacher_score": teacher_score,
                     "teacher_wld": wld_class(teacher_score),
+                    "teacher_exact": (
+                        row.get("edax_score_bound", "exact") == "exact"
+                    ),
                 }
             )
             decision_rows[parent_id].append(len(records) - 1)
@@ -211,6 +214,10 @@ def materialize_siblings(
     }
     data["selected"] = np.asarray(
         [record["selected"] for record in records],
+        dtype=np.bool_,
+    )
+    data["teacher_exact"] = np.asarray(
+        [record["teacher_exact"] for record in records],
         dtype=np.bool_,
     )
     data = add_features(data, "white-response siblings")
@@ -307,6 +314,7 @@ def ranking_pairs(
     margin_weights: list[float] = []
     scores = data["teacher_score"][indices]
     classes = data["teacher_wld"][indices]
+    exact = data["teacher_exact"][indices]
     for rows in grouped_local_rows(data, indices):
         for first_offset, first in enumerate(rows):
             for second in rows[first_offset + 1 :]:
@@ -325,7 +333,11 @@ def ranking_pairs(
                     cross_weights.append(
                         float(abs(first_class - second_class))
                     )
-                elif first_score != second_score:
+                elif (
+                    exact[first]
+                    and exact[second]
+                    and first_score != second_score
+                ):
                     winner, loser = (
                         (first, second)
                         if first_score > second_score
