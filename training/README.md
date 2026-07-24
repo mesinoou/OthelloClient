@@ -219,6 +219,29 @@ python -m training.train_ranking_model `
 
 順位学習は候補モデルを別ディレクトリへ出力し、`data/evaluation-tables.bin`を直接変更しない。深さ安定率、順位指標、固定深さ対戦、Edax戦の順に採用判定する。
 
+白番敗局の全合法手をEdaxで採点した兄弟手TSVから、勝敗クラスを
+`勝ち > 引分 > 負け`の順で優先するphase 0-1補正を作る場合は次を使う。
+
+```powershell
+python -u -m training.train_white_response_ranking `
+  --input-tsv .training/analysis/white-siblings-edax-l11.tsv `
+  --base-model data/evaluation-tables-tournament.bin `
+  --output-dir .training/models/white-response-ranking `
+  --epochs 120 `
+  --patience 15 `
+  --device cuda `
+  --overwrite
+```
+
+同じopeningから派生した局面がtrain、validation、testをまたがないよう、
+opening単位で分割する。無補正もエポック0の候補に含め、validationの
+WLD降格率、勝敗クラス後悔、重大石差後悔、平均石差後悔、補正量の順で
+保守的に最良エポックを選ぶ。phase 2-3は厳密なゼロ補正であり、出力は
+既存runtime tableへ加算済みの`evaluation-tables.bin`である。
+EVAL-019では少数の敗局だけに学習すると新規openingのEdax戦で悪化した。
+したがって、敗局だけでなく勝ち・引分を含む広い白番局面を同一品質の
+教師で採点するまで、この候補を本番モデルへ配置してはならない。
+
 学習済み候補を教師探索の再実行なしで同じTSVへ追加採点する場合は次を使う。
 
 ```powershell
