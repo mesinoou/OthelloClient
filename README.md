@@ -85,8 +85,9 @@ java -cp .build OthelloClient 127.0.0.1 25033 Player auto 8000 `
 ```
 
 Linuxでは`sha256sum -c data/tournament-models.sha256`で照合し、同じ引数で
-起動する。モデル本体はGit追跡外なので、リポジトリ取得後に2ファイルを
-`data/`へ配置する必要がある。
+起動する。大会用の黒・白モデル本体はGitで追跡しているため、リポジトリの
+cloneまたはpull後に追加転送は必要ない。汎用の`evaluation-tables.bin`と
+実験モデルは引き続きGit追跡外である。
 
 黒番と白番で別の検証済み評価モデルを使う場合は、位置引数のモデルを
 共通既定値として、`--black-model`または`--white-model`で上書きする。

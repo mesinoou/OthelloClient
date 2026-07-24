@@ -2,6 +2,10 @@
   "experiment": "TOURNEY-002",
   "status": "accepted",
   "date": "2026-07-24",
+  "distribution": {
+    "git_tracked": true,
+    "manifest": "data/tournament-models.sha256"
+  },
   "models": {
     "black": {
       "name": "EVAL-018 held",

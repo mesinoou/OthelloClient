@@ -19,6 +19,8 @@ score_*.txt
 data/evaluation-tables.bin
 data/evaluation-tables-*.bin
 data/evaluation-tables-*.metadata.json
+!data/evaluation-tables-tournament.bin
+!data/evaluation-tables-tournament-white.bin
 
 # Python training caches
 __pycache__/
