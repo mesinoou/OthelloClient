@@ -1,0 +1,19 @@
+TOURNEY-001 real-server smoke
+Date: 2026-07-24
+Server: OthelloServer 1.17, timeout=10, debug=on
+Parallelism: 2 servers, 4 clients, 4 search threads per client
+Client model: EVAL-018 held, SHA-256 d3b3b7b62848371f9fd3c950b7c7eb9abec79f9cdf09aa7e9c6b13647f628042
+Client settings: 8000 ms, TT auto, opening book on, ponder off
+
+Game 1: Smoke1a 34-30 Smoke1b
+Game 2: Smoke2b 34-30 Smoke2a
+
+client exit codes: 0, 0, 0, 0
+client searches: 25, 25, 25, 25
+maximum reported search time: 8000 ms
+client stderr bytes: 0, 0, 0, 0
+server stderr bytes: 0, 0
+illegal moves: 0
+protocol errors: 0
+timeout losses: 0
+completed games: 2/2

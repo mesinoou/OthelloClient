@@ -17,6 +17,7 @@ score_*.txt
 
 # Locally deployed learned evaluator artifacts
 data/evaluation-tables.bin
+data/evaluation-tables-*.bin
 data/evaluation-tables-*.metadata.json
 
 # Python training caches
